@@ -13,6 +13,9 @@ Use Linux, macOS, or WSL2 with:
 - Docker with the Compose plugin (`docker compose` with `--wait` support);
 - GNU Make.
 
+On Linux, `docker info` must work for your user. After adding the user to the
+Docker group, log in again or run `newgrp docker` in the terminal.
+
 The frontend uses React 19.3.0, TypeScript 7.0.2, and Vite 8.3.0. Compose pins
 PostgreSQL 18 Alpine by image digest.
 
