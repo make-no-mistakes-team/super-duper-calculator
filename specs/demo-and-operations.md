@@ -55,7 +55,7 @@ outcomes for each selected reveal.
 
 Previously earned personal achievements are not expected to announce again.
 Use a fresh anonymous browser context when a first-discovery reveal is needed.
-Rehearse against the application service, PostgreSQL, and any enabled room features.
+Rehearse against the service, its database, and any enabled room features.
 
 The theatrical incident's three zero-division attempts must be distinct
 deliberate actions. Its real errors remain visible and its automatic recovery
@@ -67,7 +67,7 @@ For every candidate:
 
 - scientific result and angle-mode behavior;
 - understandable syntax and domain errors;
-- PostgreSQL persistence across application and database restarts;
+- committed records retained after restart and reopening the same file;
 - private history and clickable reuse;
 - a usable laptop and phone core layout;
 - a tested local or recorded fallback.
@@ -92,12 +92,15 @@ Document how to:
 
 - disable large effects while preserving ordinary calculation;
 - disable room publication and collective reactions;
-- restart the application and PostgreSQL while retaining committed records;
-- start the local PostgreSQL instance, apply migrations, and run the fallback;
+- restart the application while retaining its database path and committed records;
+- start the local fallback with its separate database and built assets;
 - present the checked recording if live operation is unavailable.
 
-Use a separate database for the local fallback. If audience networking fails,
-show the core calculator and the available personal discoveries.
+Follow the [offline fallback requirements](public-deployment.md#local-or-recorded-fallback)
+and the service's [reset](application-service.md#file-lifecycle) and
+[restore](application-service.md#backup-and-restore) procedures.
+If audience networking fails, show the core calculator and the available
+personal discoveries.
 
 ## Acceptance
 

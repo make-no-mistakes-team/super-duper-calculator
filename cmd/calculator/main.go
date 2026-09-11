@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/make-no-mistakes-team/super-duper-calculator/internal/storage"
 )
 
 func main() {
@@ -21,7 +24,20 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (runErr error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := storage.Open(ctx, os.Getenv("DATABASE_PATH"))
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("close database: %w", err))
+		}
+	}()
+
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"
@@ -32,6 +48,7 @@ func run() error {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, "{\"status\":\"ok\"}\n")
 	})
+	mux.HandleFunc("GET /health/ready", readiness(db))
 
 	server := &http.Server{
 		Addr:              addr,
@@ -43,8 +60,6 @@ func run() error {
 		return fmt.Errorf("listen: %w", err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- server.Serve(listener)
@@ -68,4 +83,20 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func readiness(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		var schemaVersion int
+		if err := db.QueryRowContext(ctx, "PRAGMA schema_version").Scan(&schemaVersion); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, "{\"status\":\"unavailable\"}\n")
+			return
+		}
+		_, _ = io.WriteString(w, "{\"status\":\"ok\"}\n")
+	}
 }

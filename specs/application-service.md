@@ -6,8 +6,8 @@
 
 One Go application owns calculation, anonymous browser identity, persistence,
 and optional room events. The calculation engine remains an independent package.
-PostgreSQL stores persistent data. The service computes results, achievement
-awards, and statistical totals from validated input.
+The service computes results, achievement awards, and statistical totals from
+validated input.
 
 Production browser requests are same-origin HTTP/JSON. The development setup
 must preserve this model through a proxy or equivalent arrangement.
@@ -17,16 +17,99 @@ parser libraries, and component structure remain implementation choices.
 
 ## Database configuration
 
-Use PostgreSQL in development, integration tests, and deployment. The Go service
-reads its connection settings from `DATABASE_URL` and uses a bounded connection
-pool. Keep credentials out of client assets and logs.
+Use SQLite in development, integration tests, and deployment through the
+pure-Go `modernc.org/sqlite` driver, pinned to `v1.58.0`. Run one Go application
+instance. The database requires persistent local storage with working file
+locks and synchronization. Network filesystems and ephemeral disks are unsuitable.
 
-Store schema changes as versioned SQL migrations. Apply the same migrations in
-every environment before the application accepts traffic. Database constraints
-must enforce action identity and one-time achievement awards.
+`DATABASE_PATH` names the database file and defaults to `data/calculator.sqlite`.
+At startup, call `storage.Open(ctx context.Context, path string) (*sql.DB, error)`
+in `internal/storage` to open or create the file and configure SQLite.
+Close the connection on shutdown. New installations use an empty file without
+importing records.
 
-Local PostgreSQL runs in Docker Compose. Container storage, readiness, and
-deployment requirements are defined in [Public Deployment](public-deployment.md).
+Keep the database, its sidecar files, and its parent directory private to the
+application's operating-system user, outside public assets and source control.
+Opening or configuration failures stop startup. File access, locking, disk-full,
+and migration errors must preserve existing files; never reset automatically or
+fall back to memory.
+
+The opener applies this policy:
+
+- Enable `journal_mode=WAL` and verify that SQLite selected WAL.
+- Enable `foreign_keys=ON` on every physical connection, including replacements,
+  before starting a transaction.
+- Set `synchronous=FULL` and `busy_timeout=5000` on every connection.
+- Set `SetMaxOpenConns(1)` and `SetMaxIdleConns(1)` on the `database/sql` pool.
+
+SQLite permits only one writer at a time. The single application connection
+serializes database access. Keep transactions short, close result sets promptly,
+and leave automatic checkpointing enabled. Evaluation, network calls, and SSE
+delivery must happen outside transactions. Use request contexts to bound waits
+for the Go connection; the busy timeout only bounds SQLite lock waits.
+Return safe service errors for lock contention and I/O failures; retries must
+be bounded.
+
+WAL with `synchronous=FULL` synchronizes each transaction's commit before success
+is reported, subject to the operating system and disk honoring synchronization.
+Do not reduce durability settings to meet the audience workload.
+
+References: [WAL](https://www.sqlite.org/wal.html),
+[foreign keys](https://www.sqlite.org/foreignkeys.html#fk_enable),
+[durability](https://www.sqlite.org/pragma.html#pragma_synchronous), and
+[busy timeouts](https://www.sqlite.org/pragma.html#pragma_busy_timeout).
+
+### Schema migrations
+
+Store schema changes as versioned SQL migrations and apply the same migrations
+in each environment before accepting business traffic. Record applied versions
+and use transactional schema changes where SQLite supports them. Migrations
+must initialize a fresh file and preserve existing records on upgrade.
+
+Database constraints enforce identity-scoped action uniqueness, ownership
+relationships, and one-time achievement awards. Preserve canonical result
+strings losslessly; SQL affinity or formatting must not replace them with
+rounded display values.
+
+### File lifecycle
+
+Restarts and application replacements reopen the same resolved database path.
+Stop the old process before its replacement opens the file. Ordinary shutdown
+closes the connection and retains the database.
+
+To reset local data, stop the application, choose a new, unused `DATABASE_PATH`,
+and restart. The previous files remain untouched. Never delete live database
+or WAL files. If history is unexpectedly empty, check the resolved path.
+
+### Backup and restore
+
+Create live backups with the [Online Backup API](https://www.sqlite.org/backup.html)
+or [`VACUUM INTO`](https://www.sqlite.org/lang_vacuum.html#vacuuminto).
+Write each snapshot to a separate private path outside public assets.
+Verify that the operation completed successfully and check the snapshot before
+using it. An interrupted export may be incomplete.
+
+Never copy the live main file alone: its
+[`-wal` file](https://www.sqlite.org/wal.html#the_wal_file) may contain committed
+data. Separating them can lose data or corrupt the database.
+Copy files directly only after all database users close cleanly and checkpointing
+completes. After a crash, or when a WAL remains, keep the file set together and
+let SQLite recover and close it, or create a snapshot as above.
+Never remove the WAL by hand.
+
+Stop the application before restoring. Place a checked snapshot at a fresh
+private path, without sidecar files from another database, and preserve the
+original. Set `DATABASE_PATH` to the restored file and start a compatible
+application version. Apply required schema migrations, then verify readiness,
+retained records, and identity isolation before resuming traffic.
+
+### Health
+
+`GET /health/live` reports HTTP process liveness independently of SQLite.
+`GET /health/ready` performs a real, bounded SQLite query. Success returns
+HTTP 200 with `{"status":"ok"}`; an unavailable query returns
+HTTP 503 with `{"status":"unavailable"}` and no internal error details.
+Health checks neither establish an anonymous identity nor create business data.
 
 ## Browser identity
 
@@ -64,6 +147,8 @@ request independently.
 
 | Method and path | Purpose |
 |---|---|
+| `GET /health/live` | Check HTTP process liveness |
+| `GET /health/ready` | Query SQLite to check database readiness |
 | `GET /api/session` | Establish or resume anonymous identity |
 | `GET /api/capabilities` | Discover supported behavior |
 | `POST /api/calculations` | Evaluate and durably record an accepted calculation |
@@ -146,14 +231,16 @@ HTTP 200. Request failures use the error responses below and create no record.
 
 ## Durable submission and repeated actions
 
-Calculation records must be durable before a successful application response.
-Any persistent counters or awards claimed by that response must also be
-committed consistently with the action.
+Commit calculation records in short transactions before returning success
+or publishing room events. Any persistent counters or awards claimed by the
+response must also be committed consistently with the action.
 
 Optional statistics or fun failures may omit their extras, but must not prevent
 the core calculation from being saved and returned. Do not claim an uncommitted
 award. Derived state can be reconciled from authoritative history without
 creating additional calculations or replaying old announcements.
+Isolate optional SQL work using separate short transactions, or savepoints only
+for errors that permit rollback to that savepoint.
 
 If saving the calculation fails, return a service error. If room fan-out fails
 after persistence, return the saved result with publication `unavailable`.

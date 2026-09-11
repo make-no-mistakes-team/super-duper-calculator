@@ -16,7 +16,7 @@ export default function App() {
     setHealth({ kind: 'loading' });
 
     try {
-      const response = await fetch('/health/live', {
+      const response = await fetch('/health/ready', {
         signal: controller.signal,
         cache: 'no-store',
         headers: { Accept: 'application/json' },
@@ -43,7 +43,7 @@ export default function App() {
 
       const message =
         error instanceof TypeError
-          ? 'Не удалось получить ответ. Проверьте, запущен ли Go-сервер.'
+          ? 'Не удалось получить ответ. Проверьте, запущен ли сервер.'
           : error instanceof SyntaxError
             ? 'Сервер вернул некорректный JSON.'
             : error instanceof Error
@@ -64,14 +64,14 @@ export default function App() {
         <p className="eyebrow">Среда разработки</p>
         <h1>Супер-дупер калькулятор</h1>
         <p className="intro">
-          Стартовая страница проекта: проверка связи с Go-сервером.
+          Проверка запуска и доступности сервера.
         </p>
       </header>
 
       <section className="health" aria-labelledby="health-heading">
         <div className="section-heading">
-          <h2 id="health-heading">Go-сервер</h2>
-          <code>GET /health/live</code>
+          <h2 id="health-heading">Готовность сервера</h2>
+          <code>GET /health/ready</code>
         </div>
         <div className="health-result" role="status" aria-atomic="true">
           <p className={`status status--${health.kind}`}>
@@ -79,14 +79,14 @@ export default function App() {
             {health.kind === 'loading'
               ? 'Проверяем соединение'
               : health.kind === 'success'
-                ? 'Сервер отвечает'
+                ? 'Сервер готов'
                 : 'Проверка не прошла'}
           </p>
           <p className="status-detail">
             {health.kind === 'loading'
               ? 'Ждём ответ на запрос.'
               : health.kind === 'success'
-                ? 'Сервер вернул status: ok. Эта проверка подтверждает только работу Go-процесса.'
+                ? 'Сервер отвечает и имеет доступ к базе данных.'
                 : health.message}
           </p>
         </div>

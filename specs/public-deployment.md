@@ -4,30 +4,21 @@
 
 ## Deployment shape
 
-Deploy one Go application with built web assets and PostgreSQL. Serve the
-browser over HTTPS at a stable URL suitable for a QR code.
+Deploy the Go application with built web assets under the
+[storage policy](application-service.md#database-configuration).
+Serve the browser over HTTPS at a stable URL suitable for a QR code.
 
-PostgreSQL may run in a container or as a managed service. Keep database access
-on a private network. If rooms are enabled, the application host and proxy must
-support long-lived SSE responses without buffering updates.
+Keep the database directory outside release-specific build directories.
+Configure a stable absolute `DATABASE_PATH` for hosting.
+
+If rooms are enabled, the application host and proxy must support long-lived
+SSE responses without buffering updates.
 
 ## Local development
 
-Run PostgreSQL in Docker Compose and run the Go service and Vite on the host.
-The development setup must provide:
-
-- a pinned PostgreSQL image version, with the same supported major version in
-  development, CI, and deployment;
-- a named volume mounted at the data location required by the selected image;
-- a `pg_isready` healthcheck and a startup command that waits for readiness;
-- a `DATABASE_URL` for the Go service, with credentials in local environment
-  configuration;
-- versioned SQL migrations for creating and updating the schema;
-- a database port bound to loopback when accessed from the host.
-
-Document the Docker and Compose prerequisites, database startup, migration,
-shutdown, and reset commands. Ordinary shutdown or container recreation must
-retain data. Document destructive reset separately and identify what it deletes.
+Run the Go service and Vite on the host. Use the application's
+[database configuration](application-service.md#database-configuration) and
+[shutdown and reset procedures](application-service.md#file-lifecycle).
 
 ## Public paths
 
@@ -52,9 +43,9 @@ It must be possible to:
 - preserve the database across an ordinary restart or application replacement;
 - distinguish an unavailable database from an empty new history.
 
-Keep PostgreSQL data on persistent storage. Database connection or migration
-failures must be reported without deleting history. Document backup and restore
-procedures for the public database.
+Document and rehearse the
+[backup and restore procedure](application-service.md#backup-and-restore)
+before the demonstration.
 
 ## Security baseline
 
@@ -91,12 +82,11 @@ The calculator has priority over room presentation when resources are limited.
 
 ## Operational visibility
 
-Provide a simple way to determine whether the service and its database are
-available, which version is running, and whether failures are widespread.
+Operators must be able to check [health](application-service.md#health),
+identify the running version, and assess whether failures are widespread.
 Useful logs include request/action identifiers, outcome categories, and timing.
 
-Exclude session secrets, database credentials, and full user expressions from
-default logs.
+Exclude session secrets and full user expressions from default logs.
 
 Provide documented controls to disable room publication and large effects
 independently of the calculator.
@@ -106,20 +96,18 @@ independently of the calculator.
 The course permits local operation and video. Prepare a checked fallback that
 shows real server-side calculation, errors, persistent history, and reuse.
 
-The local fallback uses PostgreSQL through Docker Compose and a separate local
-database. Before an offline demonstration, download the required images and
-dependencies, apply migrations, and make client assets available locally.
-Verify the core path with the public host and external network unavailable.
-
-Public history is not synchronized to the fallback database. The fallback may
-omit the room demonstration when audience networking is unavailable.
+Use a separate local database file; public history is not synchronized to it.
+Before going offline, prepare the Go executable, dependencies, and built client
+assets, and verify schema initialization. Exercise startup, restart, and the
+core path with the public host and external network unavailable.
+The fallback may omit rooms when audience networking is unavailable.
 
 ## Acceptance
 
 For public hosting, open the URL on a phone, calculate, and reload history.
-Verify that application and PostgreSQL restarts preserve committed records.
-For container deployments, also recreate the database container with its
-existing volume and confirm that history remains available.
+Verify that application restart and replacement reopen the same file and
+preserve committed records. Exercise backup and restore without mixing
+the public database with the local fallback.
 
 If rooms are included: verify room deep links, multiple devices, reconnect,
 the selected classroom workload, and the ability to disable shared features.

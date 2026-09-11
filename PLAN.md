@@ -118,14 +118,13 @@ the scientific baseline is stable.
 
 - Client: TypeScript, React, and Vite.
 - Service: Go.
-- Persistence: PostgreSQL in development, integration tests, and deployment.
-- Local development: PostgreSQL in Docker Compose; Go and Vite on the host.
-- Database configuration: `DATABASE_URL` and versioned SQL migrations.
+- Persistence: SQLite.
 - The engine is an independently testable package within the Go application.
 - Ordinary application operations use same-origin HTTP/JSON.
 - If rooms are implemented, server-sent events deliver server-to-client updates;
   calculations and reaction changes still use HTTP requests.
-- Hosting provider and exact libraries remain implementation choices.
+- Hosting provider and other libraries remain implementation choices within
+  these storage and deployment constraints.
 
 The application contract is defined in
 [Application Service](specs/application-service.md). Implementation may choose

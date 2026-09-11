@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 /bin/
+/data/
+*.sqlite
+*.sqlite-*
 /web/node_modules/
 /web/dist/
 *.tsbuildinfo

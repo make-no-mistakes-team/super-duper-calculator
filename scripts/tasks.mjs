@@ -1,8 +1,6 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -78,14 +76,10 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
 }
 
 async function initializeEnvironment() {
-  const template = await readFile(join(root, ".env.example"), "utf8");
-  const content = template.replace(
-    /^POSTGRES_PASSWORD=$/m,
-    `POSTGRES_PASSWORD=${randomBytes(24).toString("hex")}`,
-  );
+  const content = await readFile(join(root, ".env.example"), "utf8");
   try {
     await writeFile(environmentFile, content, { flag: "wx", mode: 0o600 });
-    console.log("Created .env with a generated local database password.");
+    console.log("Created .env from .env.example.");
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     console.log("Existing .env left unchanged.");
@@ -105,31 +99,6 @@ async function buildGo() {
   await run("go", ["build", "-o", binary, "./cmd/calculator"]);
 }
 
-function startDatabase() {
-  return run("docker", ["compose", "up", "-d", "--wait", "--wait-timeout", "60", "postgres"]);
-}
-
-async function resetDatabase() {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("Database reset requires an interactive terminal. Run make db-reset there.");
-  }
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  let answer;
-  try {
-    answer = await prompt.question(
-      "Delete all local PostgreSQL data and start fresh? Type reset to confirm: ",
-      { signal: interruption.signal },
-    );
-  } finally {
-    prompt.close();
-  }
-  if (answer.trim() !== "reset") {
-    console.log("Database reset cancelled.");
-    return;
-  }
-  await run("docker", ["compose", "down", "--volumes"]);
-  await startDatabase();
-}
 
 async function develop() {
   await buildGo();
@@ -149,11 +118,9 @@ const tasks = {
   async setup() {
     await initializeEnvironment();
     loadEnvironment();
+    await run("go", ["mod", "download"]);
     await run("npm", ["ci"], web);
   },
-  db: startDatabase,
-  down: () => run("docker", ["compose", "down"]),
-  "db-reset": resetDatabase,
   dev: develop,
   "build-go": buildGo,
   "build-web": () => run("npm", ["run", "build"], web),

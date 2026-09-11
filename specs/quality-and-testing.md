@@ -63,14 +63,17 @@ rounding.
 
 ## Service and persistence behavior
 
-Run persistence and service integration tests on isolated PostgreSQL databases
-or schemas. Use the same supported major version and SQL migrations as the
-application. Test setup must wait for database readiness before applying
-migrations and starting the service.
+Run persistence and service integration tests on real database files in isolated
+temporary directories. Use the application's
+[opener and storage policy](application-service.md#database-configuration) and
+versioned SQL migrations. Do not substitute in-memory databases or shared
+developer files. Close the service and database handles before removing a test
+directory.
 
 Verify:
 
-- successful and erroneous accepted calculations survive application and PostgreSQL restarts;
+- successful and erroneous accepted calculations survive process restart and
+  reopening the same database file, including an unclean exit after commit;
 - a different anonymous browser cannot obtain another identity's history or
   reduction data;
 - records beyond the first history page remain reachable in stable order;
@@ -80,15 +83,30 @@ Verify:
   and one set of durable effects;
 - the same expression deliberately submitted again creates a new record;
 - a reused action ID with changed input is rejected;
-- a database failure returns a service error;
+- a database failure returns a service error without claiming an unsaved record;
 - a room publication failure does not invalidate an already saved result.
 
 Distinguish transport/request errors from persisted mathematical outcomes.
 
-Verify that migrations initialize an empty database and preserve existing
-records when the schema is updated. Container recreation with the existing
-volume must retain committed history. Database downtime and recovery must
-produce the documented service errors and allow calculation to resume.
+Verify that migrations initialize an empty file and preserve existing records
+on upgrade. Failed migrations must not delete the file or expose a partially
+applied schema to business traffic.
+
+Exercise inaccessible paths, real lock contention, and recovery using isolated
+files. An inaccessible path must fail startup rather than select another file
+or memory. Hold a write transaction on a separate test connection to verify
+that lock waits remain bounded, failures preserve committed records, and
+submissions can resume after the lock is released. Retrying an uncertain
+action still uses its original ID and must not duplicate durable effects.
+
+Check that new and replacement connections enforce declared foreign keys.
+Verify rollback of a failed action's durable changes, canonical result
+round-tripping, and restoration from a
+[valid backup](application-service.md#backup-and-restore) into a separate file.
+Follow the [file lifecycle](application-service.md#file-lifecycle) during recovery.
+
+Check both [health endpoints](application-service.md#health), including failed
+database queries and process liveness while storage is unavailable.
 
 ## Real client verification
 
@@ -148,8 +166,8 @@ recovery, and unaffected real outcomes when effects are disabled.
 
 ## Public rehearsal and CI
 
-CI runs the critical deterministic engine and service checks. Provision
-PostgreSQL, wait for readiness, and apply migrations before integration checks.
+CI runs the critical deterministic engine and service checks, including the
+[persistence scenarios](#service-and-persistence-behavior).
 Add regression coverage for discovered behavioral defects.
 
 Public deployment checks use the real hosted version and the workload specified

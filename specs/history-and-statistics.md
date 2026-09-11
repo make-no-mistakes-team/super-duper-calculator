@@ -4,8 +4,8 @@
 
 ## Personal history
 
-The service stores each anonymous browser identity's calculation history in
-PostgreSQL. The same personal history is available in private and room modes.
+The service stores each anonymous browser identity's calculation history.
+The same personal history is available in private and room modes.
 Room participation does not publish that history.
 
 A record preserves:
@@ -29,8 +29,10 @@ Malformed HTTP requests, size/work-budget rejections, rate-limit responses, and
 internal failures are not mathematical history entries. A network retry of the
 same action is not another calculation.
 
-Committed history must survive application and PostgreSQL restarts, database
-container recreation with its data volume, and browser reopening.
+Committed history must survive application restarts and replacement.
+Browser reopening retains access when the identity cookie remains.
+Follow the [file lifecycle](application-service.md#file-lifecycle) and
+[backup requirements](application-service.md#backup-and-restore).
 
 ## Identity boundary
 

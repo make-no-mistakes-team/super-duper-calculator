@@ -12,7 +12,7 @@ Specifications for the Unnecessarily Advanced Calculator.
 | Document | Authoritative scope |
 |---|---|
 | [Calculation Engine](specs/calculation-engine.md) | Scientific grammar, numerical semantics, errors, and reduction steps |
-| [Application Service](specs/application-service.md) | HTTP operations, PostgreSQL persistence, identity, and integration |
+| [Application Service](specs/application-service.md) | HTTP operations, persistence, identity, and integration |
 | [History & Statistics](specs/history-and-statistics.md) | Durable personal records, reuse, and metrics |
 | [Client Experience](specs/client-experience.md) | Hybrid/minimal presentation, themes, Russian-first localization, and UX |
 | [Visualization & Animation](specs/visualization-and-animation.md) | Optional playback that highlights and reduces subexpressions |
