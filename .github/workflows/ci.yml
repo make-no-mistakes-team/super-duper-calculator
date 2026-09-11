@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Set up local environment and dependencies
+        run: make setup
+      - name: Start PostgreSQL and wait for readiness
+        id: database
+        run: make db
+      - name: Check Go and web
+        run: make check
+      - name: Stop PostgreSQL
+        if: ${{ always() && steps.database.outcome != 'skipped' }}
+        run: make down

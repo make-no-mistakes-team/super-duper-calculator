@@ -1,0 +1,65 @@
+export type AngleUnit = 'deg' | 'rad';
+
+export type SourceSpan = {
+  start: number;
+  end: number;
+};
+
+export type MathError = {
+  code: string;
+  stage: 'parse' | 'evaluate';
+  params: Record<string, unknown>;
+  span: SourceSpan | null;
+};
+
+export type Outcome =
+  | { kind: 'success'; value: string }
+  | { kind: 'error'; error: MathError };
+
+export type CalculationContext = {
+  angleUnit: AngleUnit;
+  semanticsVersion: string;
+};
+
+export type CalculationFacts = {
+  operators: Record<string, number>;
+  functions: Record<string, number>;
+  operationCount: number;
+  depth: number;
+};
+
+export type RoomContext = {
+  code: string;
+  publish: boolean;
+};
+
+export type CalculationRequest = {
+  requestId: string;
+  expression: string;
+  angleUnit: AngleUnit;
+  room?: RoomContext;
+};
+
+export type CalculationRecord = {
+  id: string;
+  requestId: string;
+  expression: string;
+  context: CalculationContext;
+  outcome: Outcome;
+  facts?: CalculationFacts;
+  createdAt: string;
+};
+
+export type CalculationResponse = {
+  calculation: CalculationRecord;
+  publication: { status: 'private' | 'published' | 'unavailable' };
+};
+
+export type HistoryPage = {
+  items: CalculationRecord[];
+  nextCursor: string | null;
+};
+
+export type ErrorResponse = {
+  error: { code: string; params: Record<string, unknown> };
+};

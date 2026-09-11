@@ -1,0 +1,29 @@
+{
+  "calculation": {
+    "id": "example-syntax-error",
+    "requestId": "example-action-error",
+    "expression": "5*(",
+    "context": {
+      "angleUnit": "deg",
+      "semanticsVersion": "binary64-v1"
+    },
+    "outcome": {
+      "kind": "error",
+      "error": {
+        "code": "SYNTAX_ERROR",
+        "stage": "parse",
+        "params": {
+          "expected": "operand"
+        },
+        "span": {
+          "start": 3,
+          "end": 3
+        }
+      }
+    },
+    "createdAt": "2026-09-11T10:01:00Z"
+  },
+  "publication": {
+    "status": "private"
+  }
+}

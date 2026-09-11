@@ -1,0 +1,54 @@
+{
+  "items": [
+    {
+      "id": "example-syntax-error",
+      "requestId": "example-action-error",
+      "expression": "5*(",
+      "context": {
+        "angleUnit": "deg",
+        "semanticsVersion": "binary64-v1"
+      },
+      "outcome": {
+        "kind": "error",
+        "error": {
+          "code": "SYNTAX_ERROR",
+          "stage": "parse",
+          "params": {
+            "expected": "operand"
+          },
+          "span": {
+            "start": 3,
+            "end": 3
+          }
+        }
+      },
+      "createdAt": "2026-09-11T10:01:00Z"
+    },
+    {
+      "id": "example-success",
+      "requestId": "example-action-success",
+      "expression": "sqrt(81)+2^3",
+      "context": {
+        "angleUnit": "deg",
+        "semanticsVersion": "binary64-v1"
+      },
+      "outcome": {
+        "kind": "success",
+        "value": "17"
+      },
+      "facts": {
+        "operators": {
+          "+": 1,
+          "^": 1
+        },
+        "functions": {
+          "sqrt": 1
+        },
+        "operationCount": 3,
+        "depth": 1
+      },
+      "createdAt": "2026-09-11T10:00:00Z"
+    }
+  ],
+  "nextCursor": null
+}
