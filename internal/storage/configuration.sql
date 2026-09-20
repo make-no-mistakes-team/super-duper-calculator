@@ -1,0 +1,2 @@
+CREATE TABLE sessions(ID VARCHAR(36) PRIMARY KEY NOT NULL, expired_at DATETIME NOT NULL);
+CREATE TABLE calculations(request_id VARCHAR(36) PRIMARY KEY NOT NULL, session_id VARCHAR(36) NOT NULL, expression TEXT NOT NULL, angle_unit VARCHAR(3) NOT NULL, created_at DATETIME not NULL);

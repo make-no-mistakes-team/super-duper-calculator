@@ -9,49 +9,44 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
+	"log"
+	_ "embed"
 	_ "modernc.org/sqlite"
 )
+//go:embed configuration.sql
+var configuration string
 
 // Open opens a file-backed SQLite database.
 // An empty path uses data/calculator.sqlite. The caller must close the database
 // after its requests and transactions have finished.
 func Open(ctx context.Context, path string) (_ *sql.DB, err error) {
-	if err := ctx.Err(); err != nil {
+	var db *sql.DB
+	err = ctx.Err(); if err != nil {
 		return nil, err
 	}
 	if path == "" {
 		path = "data/calculator.sqlite"
 	}
-	path, err = filepath.Abs(path)
-	if err != nil {
+	path, err = filepath.Abs(path); if err != nil {	
 		return nil, fmt.Errorf("resolve database path: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("create database directory: %w", err)
-	}
+	log.Printf("path resolved")
+	_, file_stat_err := os.Stat(path);
 
-	// Never truncate an existing file or open and close it outside SQLite:
-	// closing another descriptor can release SQLite's POSIX transaction locks.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
-	switch {
-	case err == nil:
-		if err := file.Close(); err != nil {
-			return nil, fmt.Errorf("close new database file: %w", err)
+	new_flag := errors.Is(file_stat_err, os.ErrNotExist)
+	if new_flag {
+		//create new .sqlite file
+		log.Printf("create new file")
+		err = os.MkdirAll(filepath.Dir(path), 0o700); if err != nil {
+			return nil, fmt.Errorf("create database directory: %w", err)
 		}
-	case !errors.Is(err, os.ErrExist):
-		return nil, fmt.Errorf("create database file: %w", err)
-	default:
-		info, err := os.Stat(path)
-		if err != nil {
-			return nil, fmt.Errorf("inspect database file: %w", err)
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600); if err != nil {
+			return nil, fmt.Errorf("create database file: %w", err)
 		}
-		if !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("database path %q is not a regular file", path)
+		err = file.Close(); if err != nil {
+			return nil, fmt.Errorf("close new-created database file: %w", err)
 		}
 	}
-
-	// Driver DSN pragmas run for every physical connection, including replacements.
 	query := url.Values{
 		"mode": {"rw"},
 		"_pragma": {
@@ -66,20 +61,15 @@ func Open(ctx context.Context, path string) (_ *sql.DB, err error) {
 		uriPath = "/" + uriPath
 	}
 	dsn := url.URL{Scheme: "file", Path: uriPath, RawQuery: query.Encode()}
-	db, err := sql.Open("sqlite", dsn.String())
-	if err != nil {
+	db, err = sql.Open("sqlite", dsn.String()); if err != nil {
 		return nil, fmt.Errorf("configure SQLite: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	defer func() {
-		if err != nil {
-			if closeErr := db.Close(); closeErr != nil {
-				err = errors.Join(err, fmt.Errorf("close SQLite: %w", closeErr))
-			}
-		}
-	}()
-
+	err = db.PingContext(ctx); if err != nil {
+		return nil, fmt.Errorf("ping SQLite:%w", err)
+	}
+	log.Printf("sql ping success")
 	var journalMode string
 	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journalMode); err != nil {
 		return nil, fmt.Errorf("initialize SQLite: %w", err)
@@ -87,10 +77,45 @@ func Open(ctx context.Context, path string) (_ *sql.DB, err error) {
 	if journalMode != "wal" {
 		return nil, fmt.Errorf("SQLite WAL mode is unavailable (journal mode %q)", journalMode)
 	}
-	// Verify write access without changing data; read-write opens can fall back
-	// to read-only connections. No transaction remains open after startup.
+	log.Printf("sql wal checked")
 	if _, err := db.ExecContext(ctx, "BEGIN IMMEDIATE; ROLLBACK"); err != nil {
 		return nil, fmt.Errorf("check SQLite write access: %w", err)
 	}
-	return db, nil
+	log.Printf("sql write access checked")
+	if new_flag{
+		tx, err := db.BeginTx(ctx,nil); if err != nil {
+			return nil, fmt.Errorf("begin transaction: %w", err)
+		}
+		_, err = tx.ExecContext(ctx, configuration); if err != nil {
+			return nil, fmt.Errorf("configure database: %w", err) //maybe rollback
+		}
+		err = tx.Commit(); if err != nil {
+			return nil, fmt.Errorf("commit transaction: %w", err)
+		}
+		log.Printf("sql database configuration finished")
+	}else{
+		rows, err := db.QueryContext(ctx, "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';"); if err!=nil {
+			return nil, fmt.Errorf("get scheme: %w", err)
+		}
+		actual_config:=""
+		for rows.Next() {
+			var name, sqlText string
+			err = rows.Scan(&name, &sqlText); if err!=nil{
+				return nil, fmt.Errorf("parse row: %w", err)
+			}
+			actual_config = actual_config+sqlText+";\n"
+		}
+		if actual_config != configuration {
+			return nil, fmt.Errorf("config difference: '%w'", actual_config)	
+		}
+		log.Printf("sql configuration verified")
+	}
+	defer func() {
+		if err != nil {
+			if closeErr := db.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close SQLite: %w", closeErr))
+			}
+		}
+	}()
+	return db, nil;
 }
