@@ -412,6 +412,30 @@ func TestScientificErrorSpans(t *testing.T) {
 	}
 }
 
+// Known optional extensions that are not enabled are not syntax errors.
+func TestUnsupportedFeatures(t *testing.T) {
+	for _, tc := range []struct {
+		expression, feature string
+		span                contracts.SourceSpan
+	}{
+		{"5!", "factorial", contracts.SourceSpan{Start: 1, End: 2}},
+		{"(3!)!", "factorial", contracts.SourceSpan{Start: 2, End: 3}},
+		{"10%", "percentage", contracts.SourceSpan{Start: 2, End: 3}},
+		{"200*(1+10%)", "percentage", contracts.SourceSpan{Start: 9, End: 10}},
+		{"mod(7,3)", "remainder", contracts.SourceSpan{Start: 0, End: 3}},
+		{"1 + mod(-7, 3)", "remainder", contracts.SourceSpan{Start: 4, End: 7}},
+	} {
+		ev := evaluate(t, tc.expression)
+		e := ev.Outcome.Error
+		if e == nil || e.Code != "UNSUPPORTED_FEATURE" || e.Stage != "parse" || e.Params["feature"] != tc.feature || e.Span == nil || *e.Span != tc.span {
+			t.Errorf("%q = %+v, want UNSUPPORTED_FEATURE/parse %s span %v", tc.expression, e, tc.feature, tc.span)
+		}
+		if ev.Facts != nil {
+			t.Errorf("%q facts = %+v, want none", tc.expression, *ev.Facts)
+		}
+	}
+}
+
 // The angle unit is the whole mathematical context besides the expression:
 // pi keeps its value, and only trigonometry depends on the unit.
 func TestAngleUnit(t *testing.T) {

@@ -103,7 +103,7 @@ func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
 		case b == ' ', b == '\t', b == '\n', b == '\r':
 			i++
 
-		case b == '+', b == '-', b == '*', b == '/', b == '^', b == '(', b == ')', b == ',':
+		case b == '+', b == '-', b == '*', b == '/', b == '^', b == '(', b == ')', b == ',', b == '!', b == '%':
 			tokens = append(tokens, Expression[i:i+1])
 			i++
 
@@ -216,6 +216,10 @@ var reduceDegrees = func(x float64) (float64, int) {
 	n := math.RoundToEven(r / 90)                 // 45 stays in quarter 0: tan 45 is tan(pi/4)
 	return (r - 90*n) * math.Pi / 180, int(n) & 3 // -90 is the same as 270
 }
+
+// disabled are the optional extensions from specs/calculation-engine.md that
+// are known but not enabled: UNSUPPORTED_FEATURE, not a syntax error.
+var disabled = map[string]string{"!": "factorial", "%": "percentage", "mod": "remainder"}
 
 // operators is everything parse knows besides numbers and parentheses; the
 // language is extended by adding entries. Prefix signs are
@@ -405,6 +409,9 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 
 	for k, t := range tokens {
 		at := contracts.SourceSpan{Start: starts[k], End: starts[k] + len(t)}
+		if feature, ok := disabled[t]; ok { // 5!, 10%, mod(7, 3)
+			return nil, fail("UNSUPPORTED_FEATURE", at, map[string]any{"feature": feature})
+		}
 		switch c := t[0]; {
 		case t == "(":
 			if !expectOperand { // 2(3), (1)(2)
