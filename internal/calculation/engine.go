@@ -181,8 +181,12 @@ func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
 			i = j
 
 		default:
+			if b < 0x80 {
+				return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
+					Params: map[string]any{"unexpected": Expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
+			} 
 			return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
-				Params: map[string]any{"unexpected": Expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
+			Span: &contracts.SourceSpan{Start: i, End: i + 1}}
 		}
 		if len(starts) < len(tokens) {
 			starts = append(starts, start)
