@@ -1,3 +1,4 @@
+import { HistoryDemo } from './features/history/HistoryDemo';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type HealthState =
@@ -97,6 +98,8 @@ export default function App() {
           Статус обновляется при открытии страницы и вручную.
         </p>
       </section>
+
+      <HistoryDemo />
 
       <nav className="project-links" aria-label="Материалы проекта">
         <a href="https://github.com/make-no-mistakes-team/super-duper-calculator">
