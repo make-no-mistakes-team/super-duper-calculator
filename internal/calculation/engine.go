@@ -7,6 +7,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 )
@@ -89,6 +91,14 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 // "SIN" -> "sin"). Unary signs stay separate tokens: -2^2 is "-" "2" "^" "2".
 // starts[k] is the byte offset of tokens[k]. Only ASCII is accepted.
 func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
+	lenth := 0
+	for _ , r := range(Expression) {
+		if r == 0 { continue }
+		lenth += utf16.RuneLen(r)
+		if lenth > maxLength {
+			return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
+				Params: map[string]any{"length": maxLength}}
+	}
 	if len(Expression) > maxLength {
 		return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
 			Params: map[string]any{"length": maxLength}}
@@ -185,8 +195,9 @@ func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
 				return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
 					Params: map[string]any{"unexpected": Expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
 			} 
+			r, _ := utf8.DecodeRuneInString(Expression[i:])
 			return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
-			Span: &contracts.SourceSpan{Start: i, End: i + 1}}
+				Params: map[string]any{"unexpected": string(r)}, Span: &contracts.SourceSpan{Start: i, End: i + utf16.RuneLen}}
 		}
 		if len(starts) < len(tokens) {
 			starts = append(starts, start)
