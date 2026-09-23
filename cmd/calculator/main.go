@@ -30,15 +30,17 @@ func run() (runErr error) {
 
 	publicOrigin, err := parsePublicOrigin(os.Getenv("PUBLIC_ORIGIN"))
 	if err != nil {
-		return err
+		return errors.New("invalid PUBLIC_ORIGIN")
 	}
-	db, err := storage.Open(ctx, os.Getenv("DATABASE_PATH"))
+	openCtx, cancelOpen := context.WithTimeout(ctx, 10*time.Second)
+	db, err := storage.Open(openCtx, os.Getenv("DATABASE_PATH"))
+	cancelOpen()
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return fmt.Errorf("database startup: %w", err)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("close database: %w", err))
+			runErr = errors.Join(runErr, errors.New("database close failed"))
 		}
 	}()
 
@@ -51,11 +53,17 @@ func run() (runErr error) {
 		Addr:              addr,
 		Handler:           newHandler(db, publicOrigin),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+		ErrorLog:          log.New(safeServerLog{}, "", 0),
 	}
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("listen: %w", err)
+		return errors.New("HTTP listen failed")
 	}
+	listener = limitConnections(listener, 128)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -63,9 +71,11 @@ func run() (runErr error) {
 	}()
 	log.Printf("HTTP listening on http://%s", listener.Addr())
 
+	var serveResult error
+	var serveDone bool
 	select {
-	case err := <-serveErr:
-		return err
+	case serveResult = <-serveErr:
+		serveDone = true
 	case <-ctx.Done():
 		stop()
 	}
@@ -74,10 +84,13 @@ func run() (runErr error) {
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		_ = server.Close()
-		return fmt.Errorf("shutdown: %w", err)
+		return errors.New("HTTP shutdown failed")
 	}
-	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
-		return err
+	if !serveDone {
+		serveResult = <-serveErr
+	}
+	if !errors.Is(serveResult, http.ErrServerClosed) {
+		return errors.New("HTTP serve failed")
 	}
 	return nil
 }

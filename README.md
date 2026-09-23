@@ -33,7 +33,8 @@ modules, and installs locked npm dependencies. It never replaces an existing
 Open **http://127.0.0.1:5173**. The Go server listens on
 **http://127.0.0.1:8080**. `GET /health/ready` queries the database and returns
 `{"status":"ok"}` when it is accessible. `GET /health/live` reports process
-liveness. Vite proxies `/health` and `/api` to Go.
+liveness. `GET /health/version` identifies the running build without querying
+SQLite. Vite proxies `/health` and `/api` to Go.
 
 `make dev` builds and runs the Go binary alongside Vite. Ctrl+C stops both and
 their child processes. Go changes require restarting `make dev`; Vite reloads web
@@ -60,6 +61,13 @@ with `.env.example` when configuration changes.
 - Reopening the same file preserves committed data. Connection and durability
   settings are defined in [Application Service](specs/application-service.md#database-configuration).
 
+On POSIX systems, existing database directories, files, and SQLite sidecars must
+belong to the application's user and have no group or other permissions.
+Their paths cannot be symlinks. If startup rejects a path, stop the application
+and correct its ownership or permissions; the service does not change them
+automatically. Startup errors name the failed stage without exposing SQL or
+the configured path.
+
 To start with an empty database, stop the app, choose an unused `DATABASE_PATH`,
 and restart. The previous database is retained. Deleting an old database is a
 separate destructive operation: stop every process using it before removing the
@@ -69,6 +77,21 @@ those files while the database is open.
 Follow [Backup and restore](specs/application-service.md#backup-and-restore)
 when copying or restoring data. Copying a live database file by itself can omit
 committed data still in its WAL.
+
+### API sessions and limits
+
+Call `GET /api/session` before calculations or history requests. Missing or
+expired identity returns `401 SESSION_REQUIRED`; only the session operation
+creates a replacement identity. The existing browser client bootstraps this
+session on load.
+
+The API shares a process-wide rate limit of 50 requests/second with a burst of
+100 and admits at most 64 executing handlers. Rate rejection returns
+`429 RATE_LIMITED` with `Retry-After`; saturation or a deadline returns a safe
+503. Retry an uncertain calculation with its original `requestId`.
+Health endpoints remain available outside the API budget.
+See [Runtime request policy](specs/application-service.md#runtime-request-policy)
+for connection, payload, timeout, and response bounds.
 
 ## Build and check
 

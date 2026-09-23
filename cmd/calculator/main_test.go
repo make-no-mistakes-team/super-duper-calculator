@@ -11,7 +11,7 @@ import (
 )
 
 func TestReadinessTracksDatabaseAccess(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "health.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "health.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

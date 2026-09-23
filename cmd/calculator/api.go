@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -29,6 +30,8 @@ type api struct {
 	publicOrigin *url.URL
 }
 
+var errSessionRequired = errors.New("session required")
+
 func newHandler(db *sql.DB, publicOrigin *url.URL) http.Handler {
 	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin}
 	mux := http.NewServeMux()
@@ -36,18 +39,34 @@ func newHandler(db *sql.DB, publicOrigin *url.URL) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /health/ready", readiness(db))
-	mux.HandleFunc("GET /api/session", a.session)
-	mux.HandleFunc("GET /api/capabilities", capabilities)
-	mux.HandleFunc("POST /api/calculations", a.calculate)
-	mux.HandleFunc("GET /api/history", a.history)
+	mux.HandleFunc("GET /health/version", versionInfo)
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("GET /api/session", a.session)
+	apiMux.HandleFunc("GET /api/capabilities", capabilities)
+	apiMux.HandleFunc("POST /api/calculations", a.calculate)
+	apiMux.HandleFunc("GET /api/history", a.history)
+	apiMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		apiError(w, http.StatusNotFound, "NOT_FOUND")
+	})
+	guardedAPI := protectAPI(apiMux)
+	mux.Handle("/api", guardedAPI)
+	mux.Handle("/api/", guardedAPI)
 	if _, err := os.Stat("web/dist/index.html"); err == nil {
-		mux.Handle("GET /", http.FileServer(http.Dir("web/dist")))
+		files := http.FileServer(http.Dir("web/dist"))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.NotFound(w, r)
+				return
+			}
+			files.ServeHTTP(w, r)
+		})
 	}
 	return mux
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
@@ -64,7 +83,7 @@ func randomID(size int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (a api) identity(w http.ResponseWriter, r *http.Request) (string, error) {
+func (a api) identity(r *http.Request) (string, error) {
 	if cookie, err := r.Cookie(sessionCookie); err == nil && len(cookie.Value) == 64 {
 		var expires int64
 		err := a.db.QueryRowContext(r.Context(), "SELECT expires_at FROM sessions WHERE id = ?", cookie.Value).Scan(&expires)
@@ -75,28 +94,44 @@ func (a api) identity(w http.ResponseWriter, r *http.Request) (string, error) {
 			return "", err
 		}
 	}
+	return "", errSessionRequired
+}
 
+func identityError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errSessionRequired) {
+		apiError(w, http.StatusUnauthorized, "SESSION_REQUIRED")
+		return
+	}
+	apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+}
+
+func (a api) session(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		apiError(w, http.StatusForbidden, "INVALID_ORIGIN")
+		return
+	}
+	if _, err := a.identity(r); err == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"alias": "Гость"})
+		return
+	} else if !errors.Is(err, errSessionRequired) {
+		identityError(w, err)
+		return
+	}
 	id, err := randomID(32)
 	if err != nil {
-		return "", err
+		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		return
 	}
 	const lifetime = 365 * 24 * time.Hour
 	if _, err := a.db.ExecContext(r.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", id, time.Now().Add(lifetime).Unix()); err != nil {
-		return "", err
+		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: id, Path: "/", MaxAge: int(lifetime.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		Secure: r.TLS != nil || (a.publicOrigin != nil && a.publicOrigin.Scheme == "https"),
 	})
-	return id, nil
-}
-
-func (a api) session(w http.ResponseWriter, r *http.Request) {
-	if _, err := a.identity(w, r); err != nil {
-		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"alias": "Гость"})
 }
 
@@ -138,15 +173,28 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	if !errors.Is(decodeErr, io.EOF) ||
 		input.RequestID == nil || input.Expression == nil || input.AngleUnit == nil ||
 		*input.RequestID == "" || len(*input.RequestID) > 128 ||
-		(*input.AngleUnit != contracts.Degrees && *input.AngleUnit != contracts.Radians) || input.Room != nil {
+		(*input.AngleUnit != contracts.Degrees && *input.AngleUnit != contracts.Radians) {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	request := contracts.CalculationRequest{RequestID: *input.RequestID, Expression: *input.Expression, AngleUnit: *input.AngleUnit}
+	if input.Room != nil {
+		var room struct {
+			Code    *string `json:"code"`
+			Publish *bool   `json:"publish"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(input.Room))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&room); err != nil || room.Code == nil || *room.Code == "" || room.Publish == nil {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
+			return
+		}
+		request.Room = &contracts.RoomContext{Code: *room.Code, Publish: *room.Publish}
+	}
 
-	owner, err := a.identity(w, r)
+	owner, err := a.identity(r)
 	if err != nil {
-		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		identityError(w, err)
 		return
 	}
 	previous, err := a.recordByAction(r, owner, request.RequestID)
@@ -156,6 +204,12 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	case !errors.Is(err, sql.ErrNoRows):
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		return
+	}
+	if request.Room != nil {
+		// Rooms are not enabled. Still detect changed context on a previously
+		// accepted private action before rejecting a new unsupported action.
+		apiError(w, http.StatusBadRequest, "UNSUPPORTED_CONTEXT")
 		return
 	}
 	evaluation, err := a.engine.Evaluate(r.Context(), calculation.Input{Expression: request.Expression, AngleUnit: request.AngleUnit})
@@ -219,7 +273,7 @@ func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts
 }
 
 func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest) {
-	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit {
+	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit || request.Room != nil {
 		apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
 		return
 	}
@@ -232,7 +286,8 @@ type scanner interface{ Scan(...any) error }
 
 func readRecord(row scanner, seq *int64) (contracts.CalculationRecord, error) {
 	var record contracts.CalculationRecord
-	var outcomeJSON, factsJSON, createdAt string
+	var outcomeJSON, createdAt string
+	var factsJSON sql.NullString
 	values := []any{&record.ID, &record.RequestID, &record.Expression, &record.Context.AngleUnit,
 		&record.Context.SemanticsVersion, &outcomeJSON, &factsJSON, &createdAt}
 	if seq != nil {
@@ -245,8 +300,8 @@ func readRecord(row scanner, seq *int64) (contracts.CalculationRecord, error) {
 	if err := json.Unmarshal([]byte(outcomeJSON), &record.Outcome); err != nil {
 		return record, err
 	}
-	if factsJSON != "null" {
-		if err := json.Unmarshal([]byte(factsJSON), &record.Facts); err != nil {
+	if factsJSON.Valid && factsJSON.String != "null" {
+		if err := json.Unmarshal([]byte(factsJSON.String), &record.Facts); err != nil {
 			return record, err
 		}
 	}
@@ -255,13 +310,18 @@ func readRecord(row scanner, seq *int64) (contracts.CalculationRecord, error) {
 }
 
 func (a api) history(w http.ResponseWriter, r *http.Request) {
-	owner, err := a.identity(w, r)
+	owner, err := a.identity(r)
 	if err != nil {
-		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		identityError(w, err)
+		return
+	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	limit := 50
-	if raw := r.URL.Query().Get("limit"); raw != "" {
+	if raw := query.Get("limit"); raw != "" {
 		limit, err = strconv.Atoi(raw)
 		if err != nil || limit < 1 || limit > 100 {
 			apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
@@ -269,9 +329,20 @@ func (a api) history(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var before int64 = 1<<63 - 1
-	if raw := r.URL.Query().Get("cursor"); raw != "" {
+	if raw := query.Get("cursor"); raw != "" {
 		before, err = strconv.ParseInt(raw, 10, 64)
 		if err != nil || before < 1 {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
+			return
+		}
+		var owned bool
+		if err := a.db.QueryRowContext(r.Context(),
+			"SELECT EXISTS(SELECT 1 FROM calculations WHERE session_id = ? AND seq = ?)",
+			owner, before).Scan(&owned); err != nil {
+			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+			return
+		}
+		if !owned {
 			apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
 			return
 		}

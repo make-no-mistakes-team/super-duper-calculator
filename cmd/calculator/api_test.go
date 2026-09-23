@@ -14,7 +14,7 @@ import (
 )
 
 func TestCalculationHistoryAndIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "calculator.sqlite")
+	path := filepath.Join(t.TempDir(), "private", "calculator.sqlite")
 	db, err := storage.Open(t.Context(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +42,11 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	}
 	post := func(person *browser, id, expression string) (int, contracts.CalculationResponse) {
 		t.Helper()
+		if person.cookie == nil {
+			if response := send(person, http.MethodGet, "/api/session", nil); response.Code != http.StatusOK {
+				t.Fatalf("session status = %d", response.Code)
+			}
+		}
 		body, _ := json.Marshal(contracts.CalculationRequest{RequestID: id, Expression: expression, AngleUnit: contracts.Degrees})
 		response := send(person, http.MethodPost, "/api/calculations", body)
 		var result contracts.CalculationResponse
@@ -54,6 +59,11 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	}
 	page := func(person *browser, query string) contracts.HistoryPage {
 		t.Helper()
+		if person.cookie == nil {
+			if response := send(person, http.MethodGet, "/api/session", nil); response.Code != http.StatusOK {
+				t.Fatalf("session status = %d", response.Code)
+			}
+		}
 		response := send(person, http.MethodGet, "/api/history"+query, nil)
 		if response.Code != http.StatusOK {
 			t.Fatalf("history status = %d: %s", response.Code, response.Body.String())
@@ -124,7 +134,7 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 }
 
 func TestRejectCrossSchemeOrigin(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "origin.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "origin.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +151,7 @@ func TestRejectCrossSchemeOrigin(t *testing.T) {
 }
 
 func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "requests.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "requests.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +162,8 @@ func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
 		`{"requestId":"null","expression":null,"angleUnit":"deg"}`,
 		`{"requestId":"number","expression":123,"angleUnit":"deg"}`,
 		`{"requestId":"room","expression":"1","angleUnit":"deg","room":null}`,
+		`{"requestId":"room","expression":"1","angleUnit":"deg","room":{"code":"demo"}}`,
+		`{"requestId":"room","expression":"1","angleUnit":"deg","room":{"code":"demo","publish":"false"}}`,
 		`{"requestId":"extra","expression":"1","angleUnit":"deg"} {}`,
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
@@ -177,7 +189,7 @@ func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
 }
 
 func TestEscapedExpressionWithinBudget(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "escaped.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "escaped.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +198,14 @@ func TestEscapedExpressionWithinBudget(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	newHandler(db, nil).ServeHTTP(response, request)
+	handler := newHandler(db, nil)
+	session := httptest.NewRecorder()
+	handler.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+	if session.Code != http.StatusOK || len(session.Result().Cookies()) != 1 {
+		t.Fatalf("session initialization = %d", session.Code)
+	}
+	request.AddCookie(session.Result().Cookies()[0])
+	handler.ServeHTTP(response, request)
 	var result contracts.CalculationResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)

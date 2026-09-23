@@ -25,7 +25,7 @@ func parsePublicOrigin(value string) (*url.URL, error) {
 func parseOrigin(value string) (*url.URL, error) {
 	u, err := url.Parse(value)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("malformed origin")
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
 		u.User != nil || u.Path != "" || strings.ContainsAny(value, "?#") {

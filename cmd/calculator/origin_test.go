@@ -11,7 +11,7 @@ import (
 )
 
 func TestPublicOriginBoundary(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "origin.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "origin.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestPublicOriginBoundary(t *testing.T) {
 }
 
 func TestUntrustedForwardedOrigin(t *testing.T) {
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "direct.sqlite"))
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "private", "direct.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,5 +90,13 @@ func TestInvalidPublicOrigin(t *testing.T) {
 		if _, err := parsePublicOrigin(value); err == nil {
 			t.Errorf("accepted invalid PUBLIC_ORIGIN %q", value)
 		}
+	}
+}
+
+func TestInvalidPublicOriginDoesNotDiscloseConfiguration(t *testing.T) {
+	const credential = "private-origin-credential"
+	_, err := parsePublicOrigin("https://user:" + credential + "@calculator.example:%")
+	if err == nil || strings.Contains(err.Error(), credential) {
+		t.Fatalf("unsafe configuration error: %v", err)
 	}
 }

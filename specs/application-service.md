@@ -34,6 +34,13 @@ Opening or configuration failures stop startup. File access, locking, disk-full,
 and migration errors must preserve existing files; never reset automatically or
 fall back to memory.
 
+On POSIX systems, the immediate database directory, existing database, and
+existing SQLite sidecars must belong to the application's effective user and
+have no group or other permission bits. Reject symlinks at those paths.
+Validate existing paths without changing their permissions or contents.
+On Windows, access remains governed by the operating system's ACLs; POSIX mode
+checks do not establish ACL privacy.
+
 The opener applies this policy:
 
 - Enable `journal_mode=WAL` and verify that SQLite selected WAL.
@@ -65,6 +72,12 @@ Store schema changes as versioned SQL migrations and apply the same migrations
 in each environment before accepting business traffic. Record applied versions
 and use transactional schema changes where SQLite supports them. Migrations
 must initialize a fresh file and preserve existing records on upgrade.
+
+Embed migrations from `internal/storage/migrations/NNN_name.sql`, numbered
+consecutively from `001`. `PRAGMA user_version` records the applied version.
+Apply pending SQL and version updates in one transaction; roll back the whole
+upgrade on failure. Reject a database version newer than the application
+supports. Add migrations for schema changes rather than editing an applied file.
 
 Database constraints enforce identity-scoped action uniqueness, ownership
 relationships, and one-time achievement awards. Preserve canonical result
@@ -111,6 +124,50 @@ HTTP 200 with `{"status":"ok"}`; an unavailable query returns
 HTTP 503 with `{"status":"unavailable"}` and no internal error details.
 Health checks neither establish an anonymous identity nor create business data.
 
+`GET /health/version` reports build metadata independently of SQLite and API
+admission limits: `version`, plus `revision`, `modified`, and `goVersion` when
+available from the Go build. It does not expose configuration or session data.
+
+### Runtime request policy
+
+The initial single-process service uses these bounds:
+
+| Resource | Limit |
+|---|---|
+| Aggregate API rate | 50 requests/second, with a burst capacity of 100 |
+| Executing API handlers | 64 |
+| API request deadline | 10 seconds |
+| Buffered API response | 1 MiB |
+| Calculation request body | 16 KiB |
+| Accepted HTTP connections | 128 |
+| HTTP header budget | 16 KiB |
+| Header / request read timeout | 5 / 10 seconds |
+| Response write / idle timeout | 15 / 60 seconds |
+| Database startup deadline | 10 seconds |
+
+All API routes share one rate and admission budget, including session creation
+and history reads. Changing anonymous identities or source addresses does not
+reset it. There is no per-IP quota that would treat the classroom's shared
+address as one user. Health endpoints and static assets remain outside the API
+budget; the connection and HTTP timeout bounds still apply to them.
+
+Rate rejection returns HTTP 429 with `RATE_LIMITED` and a `Retry-After` delay in
+whole seconds. Saturation or a request deadline returns HTTP 503 with
+`SERVICE_UNAVAILABLE`. A timed-out handler retains its admission slot until its
+work exits. Request contexts bound database-pool waits; SQLite's separate
+`busy_timeout=5000` remains unchanged.
+
+Buffer API responses so a panic, timeout, or response-size failure cannot expose
+partial data or cookies. A recovered panic returns a safe HTTP 500 response.
+Log status, failure category, and elapsed time without request bodies, session
+cookies, raw exceptions, or SQL. Startup errors identify the failing stage
+without printing the underlying database exception or configured path.
+
+The current API guard handles finite JSON responses. Room subscriptions require
+their own bounded streaming policy when rooms are enabled; do not wrap SSE in
+the buffered response guard. Measure the selected deployment against the
+audience workload before treating these bounds as public-readiness evidence.
+
 ## Browser identity
 
 `GET /api/session` establishes or resumes an opaque anonymous session cookie.
@@ -125,6 +182,12 @@ Personal records are always scoped from this server-validated cookie. A
 client-supplied identity, history owner, or display alias cannot grant access to
 another person's data. Missing identity creates a new anonymous context through
 the session operation; it does not expose a global history.
+
+An absent, invalid, or expired cookie on calculation or history requests returns
+HTTP 401 with `SESSION_REQUIRED`, without creating a session or a calculation.
+The client calls `GET /api/session` before retrying. Session bootstrap also
+checks browser origin metadata, since it can create persistent state.
+JSON API responses use `Cache-Control: no-store`.
 
 Accounts, password recovery, and cross-device synchronization are out of scope.
 
@@ -149,6 +212,7 @@ request independently.
 |---|---|
 | `GET /health/live` | Check HTTP process liveness |
 | `GET /health/ready` | Query SQLite to check database readiness |
+| `GET /health/version` | Identify the running build without database access |
 | `GET /api/session` | Establish or resume anonymous identity |
 | `GET /api/capabilities` | Discover supported behavior |
 | `POST /api/calculations` | Evaluate and durably record an accepted calculation |
@@ -257,6 +321,11 @@ Within an anonymous identity:
 
 A retry offered after an uncertain network outcome must preserve the action ID.
 
+While rooms are unavailable, reject a new room-context action with HTTP 400
+(`UNSUPPORTED_CONTEXT`). A valid room context added to an already saved private
+action is a changed input and returns HTTP 409. Optional module delivery and
+failure-isolation checks apply when those modules are enabled.
+
 ## History response
 
 Return `{ "items": [...], "nextCursor": null }`, or a non-null continuation
@@ -266,6 +335,11 @@ maximum is 100.
 Records retain the submitted source and effective context. Restoring a record
 does not submit a calculation. Locale-dependent dates, labels, and error
 messages are rendered by the client.
+
+The service validates that a continuation cursor identifies an owned record.
+Malformed or foreign cursors return HTTP 400 without disclosing whether another
+identity owns the referenced record. Historical records with absent optional
+facts remain readable; history never invokes the current evaluator.
 
 ## Optional reduction response
 
@@ -347,6 +421,8 @@ Errors outside accepted mathematical outcomes use:
 | HTTP status | Meaning |
 |---|---|
 | 400 | Invalid request shape or unsupported context |
+| 401 | Session required; establish or resume identity through `GET /api/session` |
+| 403 | Browser origin rejected |
 | 404 | Missing resource, including a calculation not owned by this identity |
 | 409 | Reused action ID with different input, or unavailable historical reduction |
 | 413 | Expression or request work budget exceeded |
@@ -356,6 +432,10 @@ Errors outside accepted mathematical outcomes use:
 No response exposes stack traces, SQL, secrets, or arbitrary exception text.
 Mutation endpoints require same-origin browser protection; public deployment
 must not enable permissive credentialed cross-origin access.
+
+Unknown API routes return the same JSON error envelope with HTTP 404, including
+when built client assets are present. An uncertain timeout or lost response may
+follow a commit; retry the original `requestId` rather than creating a new action.
 
 ## Acceptance
 
