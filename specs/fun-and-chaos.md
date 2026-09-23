@@ -69,6 +69,19 @@ requests, history reads, and playback.
 
 The touch-grass gag may add comments at 50 and 100 accepted calculations.
 
+### Backend rule interface
+
+`discovery.New(discovery.DefaultConfig())` selects the eight rules and their
+default thresholds. Configuration can change thresholds or select fewer rules.
+`Catalog()` returns independent copies of their Russian/English names,
+descriptions, and comments.
+
+`Rules.Match(Input)` returns eligible IDs without granting awards or changing
+state. Supply the current accepted record, its owner's unique accepted count
+through that record, and the immediately preceding accepted records, newest
+first. Exclude transport retries, rejected requests, reads, and later actions
+from the snapshot. Evaluating the same snapshot does not advance progress.
+
 ## One theatrical incident
 
 An included catastrophic gag is a brief, explicitly comedic in-application

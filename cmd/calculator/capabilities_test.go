@@ -23,7 +23,7 @@ func advertisedCapabilities(t *testing.T) contracts.Capabilities {
 			request.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 		}
 		response := httptest.NewRecorder()
-		capabilities(response, request)
+		api{statisticsEnabled: true}.capabilities(response, request)
 		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json" {
 			t.Fatalf("status = %d, content type = %q", response.Code, response.Header().Get("Content-Type"))
 		}

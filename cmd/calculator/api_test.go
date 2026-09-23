@@ -20,7 +20,7 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 
 	type browser struct{ cookie *http.Cookie }
 	personA, personB := &browser{}, &browser{}
@@ -127,7 +127,7 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler = newHandler(db, nil)
+	handler = newHandler(db, nil, true)
 	if history := page(personA, ""); len(history.Items) != 2 {
 		t.Fatalf("history after restart = %+v", history)
 	}
@@ -144,7 +144,7 @@ func TestRejectCrossSchemeOrigin(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", "https://calculator.example")
 	response := httptest.NewRecorder()
-	newHandler(db, nil).ServeHTTP(response, request)
+	newHandler(db, nil, true).ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("cross-scheme origin status = %d, want 403", response.Code)
 	}
@@ -156,7 +156,7 @@ func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	for _, body := range []string{
 		`{"requestId":"missing","angleUnit":"deg"}`,
 		`{"requestId":"null","expression":null,"angleUnit":"deg"}`,
@@ -198,7 +198,7 @@ func TestEscapedExpressionWithinBudget(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	session := httptest.NewRecorder()
 	handler.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/session", nil))
 	if session.Code != http.StatusOK || len(session.Result().Cookies()) != 1 {

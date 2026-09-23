@@ -55,6 +55,9 @@ with `.env.example` when configuration changes.
 - `DATABASE_PATH` defaults to `data/calculator.sqlite`. Relative paths resolve
   from the Go process's working directory; `make` starts it at the repository
   root. Use an absolute path on permanent local storage when deploying.
+- `STATISTICS_ENABLED` defaults to `true`. Set it to `false` to disable
+  `GET /api/statistics`; calculations and history remain available. See the
+  [statistics response](specs/application-service.md#optional-statistics-response).
 - Go creates missing database directories and the file with private permissions.
   The default data directory and `.sqlite` files, including their sidecars, are
   ignored by Git. Keep custom database locations out of version control too.

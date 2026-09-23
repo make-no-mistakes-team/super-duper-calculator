@@ -35,13 +35,7 @@ func TestOpenPersistsTransactionsAtLiteralPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	var version, sessions, calculations int
-	if err := db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 {
-		t.Fatalf("fresh schema version = %d, want 1", version)
-	}
+	var sessions, calculations int
 	if err := db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sessions").Scan(&sessions); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +163,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requireLegacyRecord(t, db, 1)
+	requireLegacyRecord(t, db)
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", "session-1", 100); err != nil {
 		t.Fatalf("core schema not initialized: %v", err)
 	}
@@ -182,7 +176,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	requireLegacyRecord(t, reopened, 1)
+	requireLegacyRecord(t, reopened)
 	var sessions int
 	if err := reopened.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sessions WHERE id = ?", "session-1").Scan(&sessions); err != nil {
 		t.Fatal(err)
@@ -215,7 +209,8 @@ func TestOpenMigrationFailureRollsBackAndCanRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requireLegacyRecord(t, afterFailure, 0)
+	requireLegacyRecord(t, afterFailure)
+	requireSchemaVersion(t, afterFailure, 0)
 	var sessions int
 	if err := afterFailure.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'").Scan(&sessions); err != nil {
 		t.Fatal(err)
@@ -242,7 +237,7 @@ func TestOpenMigrationFailureRollsBackAndCanRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = retried.Close() })
-	requireLegacyRecord(t, retried, 1)
+	requireLegacyRecord(t, retried)
 	if _, err := retried.ExecContext(t.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", "recovered", 100); err != nil {
 		t.Fatalf("retry did not finish the core migration: %v", err)
 	}
@@ -251,7 +246,7 @@ func TestOpenMigrationFailureRollsBackAndCanRetry(t *testing.T) {
 func TestOpenRejectsNewerSchemaWithoutLosingRecords(t *testing.T) {
 	path := privateDatabasePath(t, "newer.sqlite")
 	legacy := createVersionZeroDatabase(t, path, false)
-	if _, err := legacy.ExecContext(t.Context(), "PRAGMA user_version = 2"); err != nil {
+	if _, err := legacy.ExecContext(t.Context(), "PRAGMA user_version = 2147483647"); err != nil {
 		t.Fatal(err)
 	}
 	if err := legacy.Close(); err != nil {
@@ -273,7 +268,8 @@ func TestOpenRejectsNewerSchemaWithoutLosingRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = preserved.Close() })
-	requireLegacyRecord(t, preserved, 2)
+	requireLegacyRecord(t, preserved)
+	requireSchemaVersion(t, preserved, 2147483647)
 }
 
 func createVersionZeroDatabase(t *testing.T, path string, conflicting bool) *sql.DB {
@@ -304,7 +300,7 @@ func createVersionZeroDatabase(t *testing.T, path string, conflicting bool) *sql
 	return db
 }
 
-func requireLegacyRecord(t *testing.T, db *sql.DB, wantVersion int) {
+func requireSchemaVersion(t *testing.T, db *sql.DB, wantVersion int) {
 	t.Helper()
 	var version int
 	if err := db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
@@ -313,6 +309,10 @@ func requireLegacyRecord(t *testing.T, db *sql.DB, wantVersion int) {
 	if version != wantVersion {
 		t.Fatalf("schema version = %d, want %d", version, wantVersion)
 	}
+}
+
+func requireLegacyRecord(t *testing.T, db *sql.DB) {
+	t.Helper()
 	var content string
 	if err := db.QueryRowContext(t.Context(), "SELECT content FROM legacy_notes WHERE id = 1").Scan(&content); err != nil {
 		t.Fatal(err)

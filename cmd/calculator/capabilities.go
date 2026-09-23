@@ -24,6 +24,8 @@ var coreCapabilities = contracts.Capabilities{
 	},
 }
 
-func capabilities(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, coreCapabilities)
+func (a api) capabilities(w http.ResponseWriter, _ *http.Request) {
+	available := coreCapabilities
+	available.Features.Statistics = a.statisticsEnabled
+	writeJSON(w, http.StatusOK, available)
 }

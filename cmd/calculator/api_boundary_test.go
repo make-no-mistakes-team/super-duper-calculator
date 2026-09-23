@@ -63,7 +63,7 @@ func decodeBody[T any](t *testing.T, w *httptest.ResponseRecorder, status int) T
 
 func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	body := `{"requestId":"anonymous","expression":"2+2","angleUnit":"deg"}`
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/history", ""},
@@ -108,7 +108,7 @@ func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 
 func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	owner := browserSession(t, handler)
 	body := `{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"deg"}`
 	responses := make(chan *httptest.ResponseRecorder, 16)
@@ -155,7 +155,7 @@ func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 
 func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	owner := browserSession(t, handler)
 	other := browserSession(t, handler)
 	insert := func(i int, identity string) {
@@ -215,7 +215,7 @@ func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 
 func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 	db, path := boundaryDatabase(t)
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	owner := browserSession(t, handler)
 	body := `{"requestId":"committed","expression":"67","angleUnit":"deg"}`
 	original := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
@@ -267,7 +267,7 @@ func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 
 func TestUnknownAPIRoutesRemainJSONWithoutSideEffects(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil)
+	handler := newHandler(db, nil, true)
 	for _, path := range []string{"/api", "/api/missing", "/api/calculations/not-owned/reduction"} {
 		w := apiRequest(handler, nil, http.MethodGet, path, "")
 		failure := decodeBody[contracts.ErrorResponse](t, w, http.StatusNotFound)

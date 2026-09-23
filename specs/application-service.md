@@ -341,6 +341,37 @@ Malformed or foreign cursors return HTTP 400 without disclosing whether another
 identity owns the referenced record. Historical records with absent optional
 facts remain readable; history never invokes the current evaluator.
 
+## Optional statistics response
+
+`GET /api/statistics` requires a valid session and returns metrics from that
+owner's complete history. An empty history returns:
+
+```json
+{
+  "totalCalculations": 0,
+  "successes": 0,
+  "mathematicalErrors": 0,
+  "divisionByZeroAttempts": 0,
+  "operators": {},
+  "functions": {},
+  "longestExpression": null,
+  "maxParsedDepth": null
+}
+```
+
+Operator and function maps count recorded occurrences, not source-text matches.
+`longestExpression`, when present, contains `calculationId`, `expression`, and
+`length` in UTF-16 units; ties keep the earliest accepted record.
+`maxParsedDepth` is null until parsed facts exist, and can be zero for a literal.
+Parse failures and historical records without facts supply no usage or depth;
+their outcomes and expression lengths still count.
+
+Reads reconstruct the metrics without changing history or issuing awards.
+Invalid metric data returns a safe 503; calculation and history remain independent
+of this derivation. `STATISTICS_ENABLED` defaults to true. When false, capabilities
+advertise statistics as unavailable and this route returns 404; actions still
+enter history and appear in statistics when it is re-enabled.
+
 ## Optional reduction response
 
 This is a read-only operation on a successful, owned calculation. It never adds

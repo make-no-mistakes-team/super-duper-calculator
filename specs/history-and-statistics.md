@@ -99,6 +99,18 @@ Measured statistics must derive from recorded data.
 The reaction catalog and eligibility rules belong to
 [Fun & Chaos](fun-and-chaos.md).
 
+`storage.GrantAchievements(ctx, db, owner, calculationID, ids)` accepts eligible
+catalog IDs for an already committed, owned calculation. It commits a separate
+short transaction and returns only newly saved `{id, earnedAt}` entries.
+The first awarding action supplies its stored UTC creation time as `earnedAt`;
+later actions and retries preserve that value. A failed batch returns no awards
+and leaves the committed calculation intact.
+
+`storage.ListAchievements(ctx, db, owner)` returns the collection in stable ID
+order. Migration `002_achievements.sql` enforces one award per owner/ID and binds
+its source calculation to the same owner. Keep a pre-upgrade backup: binaries
+that only support schema version 1 reject version 2.
+
 ## Room aggregates
 
 Only successfully published calculations contribute to public calculation
