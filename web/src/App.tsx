@@ -4,6 +4,7 @@ import { CalculatorInput } from './CalculatorInput';
 import type { AngleUnit, CalculationRecord, CalculationRequest, Capabilities, CalculationResponse } from './contracts';
 import { History } from './features/history/History';
 import { getMessages } from './i18n';
+import { ReductionPlayback } from './ReductionPlayback';
 
 type ResultState =
   | { kind: 'idle' }
@@ -127,6 +128,7 @@ export default function App() {
     const sequence = ++submissionSequence.current;
     copySequence.current++;
     setCopyStatus('idle');
+    setRestoredRecord(null);
     setResult({ kind: 'loading', request });
     try {
       await ensureSession();
@@ -175,6 +177,10 @@ export default function App() {
   const span = outcome?.kind === 'error' ? outcome.error.span : null;
   const display = outcome?.kind === 'success' ? displayValue(outcome.value) : null;
   const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(expression, capabilities);
+  const playbackRecord = restoredRecord ?? (result.kind === 'record' ? result.record : null);
+  const canPlay = capabilities?.features.reductionPlayback === true && playbackRecord?.outcome.kind === 'success' &&
+    playbackRecord.context.semanticsVersion === capabilities.semanticsVersion &&
+    unavailableExtension(playbackRecord.expression, capabilities) === null;
 
   return (
     <main className="workspace">
@@ -252,6 +258,7 @@ export default function App() {
           </div>
         )}
       </section>
+      {canPlay && playbackRecord && <ReductionPlayback key={playbackRecord.id} record={playbackRecord} messages={messages.reduction} />}
       </CalculatorInput>
 
       <aside className="history-rail"><History

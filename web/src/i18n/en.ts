@@ -1,6 +1,20 @@
 import type { Messages } from './types';
 
 export const en: Messages = {
+  reduction: {
+    heading: 'Calculation steps',
+    action: 'Show calculation',
+    record: 'Saved expression',
+    loading: 'Loading steps…',
+    unavailable: 'Steps are unavailable for this record. The saved result remains in history.',
+    step: 'Step',
+    next: 'Next step',
+    skip: 'Show result',
+    close: 'Close',
+    replay: 'Replay',
+    final: 'Exact value',
+    noSteps: 'This number is already the result; there are no calculation steps.',
+  },
   history: {
     title: 'Calculation history',
     demo: {
