@@ -165,3 +165,18 @@ func TestReductionAtTokenBudget(t *testing.T) {
 		t.Errorf("reduction at token budget = %q in %d steps", result.FinalExpression, len(result.Steps))
 	}
 }
+
+func TestReductionRejectsIntermediatesBeyondEvaluatorBudgets(t *testing.T) {
+	for _, expression := range []string{
+		"0.1+0.2+" + strings.Repeat("0", 1005) + "1",
+		strings.Repeat("(", 32) + "1-3" + strings.Repeat(")", 32) + "^2",
+	} {
+		in := calculation.Input{Expression: expression, AngleUnit: contracts.Degrees}
+		if evaluation, err := calculation.New().Evaluate(t.Context(), in); err != nil || evaluation.Outcome.Kind != "success" {
+			t.Fatalf("source must remain calculable: outcome %+v, err %v", evaluation.Outcome, err)
+		}
+		if result, err := calculation.New().Reduce(t.Context(), in); !errors.Is(err, calculation.ErrExpressionLimit) {
+			t.Errorf("Reduce returned %+v, %v; want ErrExpressionLimit", result, err)
+		}
+	}
+}

@@ -119,6 +119,16 @@ func (engine) Reduce(ctx context.Context, in Input) (Reduction, error) {
 			replacement = "(" + replacement + ")"
 		}
 		after := current[:span.Start] + replacement + current[span.End:]
+		// A canonical value can be longer than its source redex, and added
+		// grouping can increase nesting. Every displayed intermediate must
+		// remain valid under the same budgets and preserve the exact result.
+		rechecked, err := evaluate(ctx, Input{Expression: after, AngleUnit: in.AngleUnit}, nil)
+		if err != nil {
+			return Reduction{}, err
+		}
+		if rechecked.Outcome.Kind != "success" || rechecked.Outcome.Value != result.FinalExpression {
+			return Reduction{}, ErrReductionInconsistent
+		}
 		result.Steps = append(result.Steps, ReductionStep{
 			Before: current, Span: span, Replacement: replacement, After: after,
 		})
