@@ -60,7 +60,7 @@ export function History({
                 : t.outcomeLabel.error;
             const timeText = dateFormatter.format(new Date(item.createdAt));
             const angleText = t.angleUnitLabel[item.context.angleUnit];
-            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${angleText}. ${timeText}`;
+            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${angleText}. ${timeText}${unsupported ? `. ${t.unsupported}` : ''}`;
 
             return (
               <li key={item.id} className="history-item">

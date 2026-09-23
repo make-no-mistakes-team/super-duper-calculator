@@ -3,6 +3,12 @@ import type { Messages } from './types';
 export const en: Messages = {
   history: {
     title: 'Calculation history',
+    demo: {
+      title: 'History demo',
+      languageLabel: 'Language',
+      scenarioLabel: 'Scenario',
+      scenarios: { normal: 'Normal', empty: 'Empty', error: 'Read error' },
+    },
     loading: 'Loading history…',
     empty: 'No saved calculations yet',
     loadMore: 'Load more',

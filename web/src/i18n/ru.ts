@@ -3,6 +3,12 @@ import type { Messages } from './types';
 export const ru: Messages = {
   history: {
     title: 'История вычислений',
+    demo: {
+      title: 'Демонстрация истории',
+      languageLabel: 'Язык',
+      scenarioLabel: 'Сценарий',
+      scenarios: { normal: 'Обычная', empty: 'Пустая', error: 'Ошибка чтения' },
+    },
     loading: 'Загрузка истории…',
     empty: 'Пока нет сохранённых вычислений',
     loadMore: 'Загрузить ещё',

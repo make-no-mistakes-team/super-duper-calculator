@@ -8,11 +8,7 @@ import type { FetchPage } from './mockApi';
 
 type Scenario = 'normal' | 'empty' | 'error';
 
-const scenarioOptions: ReadonlyArray<{ value: Scenario; label: string }> = [
-  { value: 'normal', label: 'Обычная' },
-  { value: 'empty', label: 'Пустая' },
-  { value: 'error', label: 'Ошибка чтения' },
-];
+const scenarioOptions: ReadonlyArray<Scenario> = ['normal', 'empty', 'error'];
 
 // Демонстрационные «недоступные» записи: id известны заранее.
 const UNSUPPORTED_IDS = new Set(['b1']);
@@ -53,12 +49,12 @@ export function HistoryDemo() {
   return (
     <section className="history-demo" aria-labelledby="history-demo-heading">
       <div className="section-heading">
-        <h2 id="history-demo-heading">Демонстрация истории</h2>
+        <h2 id="history-demo-heading">{t.demo.title}</h2>
       </div>
 
       <div className="history-demo-controls">
         <label>
-          Язык / Language:{' '}
+          {t.demo.languageLabel}:{' '}
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value as Language)}
@@ -69,14 +65,14 @@ export function HistoryDemo() {
         </label>
 
         <label>
-          Сценарий:{' '}
+          {t.demo.scenarioLabel}:{' '}
           <select
             value={scenario}
             onChange={(e) => setScenario(e.target.value as Scenario)}
           >
-            {scenarioOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
+            {scenarioOptions.map((option) => (
+              <option key={option} value={option}>
+                {t.demo.scenarios[option]}
               </option>
             ))}
           </select>
