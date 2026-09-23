@@ -18,11 +18,16 @@ Prepare a short core/showcase sequence and a separate audience segment.
 3. Show that it entered personal history.
 4. Reload or reopen history, restore the expression, and reuse it.
 5. Submit a malformed expression such as `sqrt(81` and show a recoverable error.
-6. If humor is included, calculate `6*7` to discover the `42` reaction.
+6. Calculate `60+7` and reveal the `six_seven` reaction: “Сикс-севен!”
 7. Optionally reveal one more selected capability, then finish cleanly.
+
+The `six_seven` reveal is required for the planned Sprint 0 showcase.
+Rehearse it in a fresh anonymous browser context with humor enabled and no
+active announcement cooldown. Keep the result `67` visible during the reaction.
 
 Suitable additional reveals include:
 
+- `6*7` for the `42` discovery;
 - `23*3` for the `69` discovery;
 - `sqrt(81)+abs(-2)+ln(e)` for the scientific-function achievement;
 - theme or minimal-mode switching with input preserved;

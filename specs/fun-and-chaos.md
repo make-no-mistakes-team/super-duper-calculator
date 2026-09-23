@@ -45,6 +45,7 @@ without changing trigger conditions.
 | Stable ID | Condition | Intended reaction |
 |---|---|---|
 | `answer_found` | A successful canonical result is exactly `42` | The answer is known; the question remains unresolved |
+| `six_seven` | A successful canonical result is exactly `67` | A brief “Сикс-севен!” (“Six seven!” in English) |
 | `nice_number` | A successful result is exactly `69` | A brief, knowing “Nice.” |
 | `result_found` | A successful result is exactly `404` | The result was found, contrary to expectations |
 | `peer_review` | Three consecutive successful deliberate calculations have identical source and angle settings | Excessively thorough checking of arithmetic |
@@ -52,10 +53,15 @@ without changing trigger conditions.
 | `scientific_method` | One successful expression uses at least three distinct required named functions | The calculator acknowledges actual scientific ambition |
 | `touch_grass` | The identity reaches 25 accepted calculations | A friendly intervention about excessive calculator use |
 
-These seven rules can supply personal achievements with localized names and
+These eight rules can supply personal achievements with localized names and
 descriptions. An award is earned once per identity and survives ordinary
 restarts. Eligibility uses actual values and parsed facts, not rounded display
 strings or arbitrary substring matches.
+
+The `six_seven` discovery is required for the planned Sprint 0 showcase.
+Rehearse it with `60+7`. Inputs such as `167`, `67/0`, and `6*7` do not qualify,
+nor does a different value whose display rounds to `67`. Use the existing
+comment, achievement, and cooldown rules for this discovery.
 
 The repeated-calculation rule counts deliberate actions, not transport retries.
 The usage count includes accepted mathematical errors but excludes rejected
