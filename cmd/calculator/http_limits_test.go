@@ -47,7 +47,7 @@ func TestAPIRateLimitRetryAndRejectedState(t *testing.T) {
 	guard := newAPIGuard(apiLimitConfig{
 		rate: 0.5, burst: 1, active: 1, timeout: time.Second, now: func() time.Time { return now },
 	})
-	handler := guard.wrap(newHandler(db, nil))
+	handler := guard.wrap(newHandler(db, nil, true))
 	var sessionCookie *http.Cookie
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		t.Helper()

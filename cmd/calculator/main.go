@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -32,6 +33,13 @@ func run() (runErr error) {
 	if err != nil {
 		return errors.New("invalid PUBLIC_ORIGIN")
 	}
+	statisticsEnabled := true
+	if value := os.Getenv("STATISTICS_ENABLED"); value != "" {
+		statisticsEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return errors.New("invalid STATISTICS_ENABLED")
+		}
+	}
 	openCtx, cancelOpen := context.WithTimeout(ctx, 10*time.Second)
 	db, err := storage.Open(openCtx, os.Getenv("DATABASE_PATH"))
 	cancelOpen()
@@ -51,7 +59,7 @@ func run() (runErr error) {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newHandler(db, publicOrigin),
+		Handler:           newHandler(db, publicOrigin, statisticsEnabled),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

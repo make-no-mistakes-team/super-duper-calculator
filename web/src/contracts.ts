@@ -87,6 +87,28 @@ export type HistoryPage = {
   nextCursor: string | null;
 };
 
+export type LongestExpression = {
+  calculationId: string;
+  expression: string;
+  length: number;
+};
+
+export type PersonalStatistics = {
+  totalCalculations: number;
+  successes: number;
+  mathematicalErrors: number;
+  divisionByZeroAttempts: number;
+  operators: Record<string, number>;
+  functions: Record<string, number>;
+  longestExpression: LongestExpression | null;
+  maxParsedDepth: number | null;
+};
+
+export type Achievement = {
+  id: string;
+  earnedAt: string;
+};
+
 export type ErrorResponse = {
   error: { code: string; params: Record<string, unknown> };
 };

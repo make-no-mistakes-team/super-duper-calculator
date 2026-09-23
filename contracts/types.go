@@ -108,6 +108,28 @@ type HistoryPage struct {
 	NextCursor *string             `json:"nextCursor"`
 }
 
+type LongestExpression struct {
+	CalculationID string `json:"calculationId"`
+	Expression    string `json:"expression"`
+	Length        int    `json:"length"`
+}
+
+type PersonalStatistics struct {
+	TotalCalculations      int64              `json:"totalCalculations"`
+	Successes              int64              `json:"successes"`
+	MathematicalErrors     int64              `json:"mathematicalErrors"`
+	DivisionByZeroAttempts int64              `json:"divisionByZeroAttempts"`
+	Operators              map[string]int64   `json:"operators"`
+	Functions              map[string]int64   `json:"functions"`
+	LongestExpression      *LongestExpression `json:"longestExpression"`
+	MaxParsedDepth         *int               `json:"maxParsedDepth"`
+}
+
+type Achievement struct {
+	ID       string    `json:"id"`
+	EarnedAt time.Time `json:"earnedAt"`
+}
+
 type APIError struct {
 	Code   string         `json:"code"`
 	Params map[string]any `json:"params"`
