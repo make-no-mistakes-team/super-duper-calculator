@@ -1,5 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#0b1117"/>
-  <rect x="5" y="5" width="54" height="54" fill="none" stroke="#77e1e9" stroke-width="2"/>
-  <text x="32" y="46" fill="#77e1e9" font-family="monospace" font-size="40" font-weight="bold" text-anchor="middle">∑</text>
+  <rect width="64" height="64" fill="#111a1e"/>
+  <path d="M13 24h38M13 40h38" fill="none" stroke="#9edbd7" stroke-width="5" stroke-linecap="square"/>
 </svg>

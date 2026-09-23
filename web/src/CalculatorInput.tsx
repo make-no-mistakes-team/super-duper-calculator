@@ -90,7 +90,7 @@ export function CalculatorInput({
 
   return (
     <section className="calculator-input" aria-labelledby="calculator-input-heading">
-      <div className="input-heading-row"><h2 id="calculator-input-heading">Выражение</h2><span>ВВОД / 01</span></div>
+      <h2 id="calculator-input-heading">Выражение</h2>
       <div className="input-help">
         <label className="calculator-input-label" htmlFor="expression">Введите выражение или используйте клавиши ниже</label>
         <span id="expression-length" aria-label={`Длина выражения: ${expression.length} из ${expressionLimit}`}>{expression.length}/{expressionLimit}</span>
@@ -134,22 +134,22 @@ export function CalculatorInput({
         </div>
         {onSubmit && (
           <button type="button" className="calculator-submit" disabled={expression.trim() === ''} onClick={onSubmit}>
-            Вычислить <span aria-hidden="true">↗</span>
+            Вычислить
           </button>
         )}
       </div>
       {children}
 
-      <div className="keypad-heading"><h2>Клавиши</h2><span>АРИФМЕТИКА</span></div>
+      <div className="keypad-heading"><h2>Клавиши</h2><span>Арифметика</span></div>
       <div className="calculator-keys" aria-label="Кнопки калькулятора">
         {arithmeticKeys.map((key) => renderKey(key))}
       </div>
-      <div className="scientific-heading">НАУЧНЫЕ ФУНКЦИИ</div>
+      <div className="scientific-heading">Научные функции</div>
       <div className="scientific-keys" aria-label="Научные функции">
         {availableScientificKeys.map((key) => renderKey(key, true))}
       </div>
       <div className="editor-tools">
-        <button type="button" onClick={erase}>⌫ <span>Стереть</span></button>
+        <button type="button" onClick={erase}>Стереть</button>
         <button
           type="button"
           onClick={() => {

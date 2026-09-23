@@ -180,12 +180,8 @@ export default function App() {
   return (
     <main className="workspace">
       <header className="workspace-header">
-        <div className="brand-mark" aria-hidden="true">∑</div>
-        <div>
-          <p className="eyebrow">Научный калькулятор</p>
-          <h1>Супер-дупер <span>калькулятор</span></h1>
-        </div>
-        <div className="workspace-state" aria-label="Режим: личный">ЛИЧНЫЙ РЕЖИМ <span aria-hidden="true" /></div>
+        <h1 className="visually-hidden">Калькулятор</h1>
+        <div className="workspace-state" aria-label="Режим: личный"><span aria-hidden="true" />Личный режим</div>
       </header>
 
       <CalculatorInput
@@ -204,8 +200,8 @@ export default function App() {
       )}
 
       <section className="calculation-result" aria-labelledby="result-heading">
-        <div className="result-heading-row"><h2 id="result-heading">Результат</h2><span>ВЫВОД / 01</span></div>
-        {result.kind === 'idle' && <p className="result-placeholder">Готов к вычислению<span className="cursor-mark" aria-hidden="true">_</span></p>}
+        <h2 id="result-heading">Результат</h2>
+        {result.kind === 'idle' && <p className="result-placeholder">Готов к вычислению</p>}
         {result.kind === 'loading' && (
           <p className="result-source" role="status">
             Вычисляем: <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
