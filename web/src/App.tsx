@@ -14,9 +14,8 @@ type ResultState =
 const messages = getMessages('ru');
 const networkError = 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
 
-function unavailableExtension(record: CalculationRecord, capabilities: Capabilities | null): string | null {
+function unavailableExtension(expression: string, capabilities: Capabilities | null): string | null {
   if (capabilities === null) return null;
-  const expression = record.expression;
   if (!capabilities.features.factorial && expression.includes('!')) return 'факториал';
   if (!capabilities.features.percentage && expression.includes('%')) return 'проценты';
   if (!capabilities.features.remainder && /\bmod\s*\(/.test(expression)) return 'остаток от деления';
@@ -175,7 +174,7 @@ export default function App() {
   const source = result.kind === 'record' ? result.record.expression : '';
   const span = outcome?.kind === 'error' ? outcome.error.span : null;
   const display = outcome?.kind === 'success' ? displayValue(outcome.value) : null;
-  const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(restoredRecord, capabilities);
+  const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(expression, capabilities);
 
   return (
     <main className="workspace">
@@ -188,7 +187,7 @@ export default function App() {
         expression={expression}
         angleUnit={angleUnit}
         capabilities={capabilities}
-        onExpressionChange={(value) => { setExpression(value); setRestoredRecord(null); }}
+        onExpressionChange={setExpression}
         onAngleUnitChange={setAngleUnit}
         onSubmit={() => void submit({ requestId: crypto.randomUUID(), expression, angleUnit })}
       >
@@ -264,7 +263,7 @@ export default function App() {
         messages={messages}
         onLoadMore={() => void loadHistory(nextCursor)}
         onSelect={selectHistory}
-        isUnsupported={(record) => unavailableExtension(record, capabilities) !== null}
+        isUnsupported={(record) => unavailableExtension(record.expression, capabilities) !== null}
       />
       {historyError && !historyLoading && (
         <button type="button" onClick={() => void loadHistory(null)}>Повторить загрузку истории</button>
