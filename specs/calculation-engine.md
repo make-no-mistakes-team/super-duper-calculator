@@ -19,7 +19,8 @@ Expressions use the same syntax in Russian and English interfaces:
 - operators `+`, `-`, `*`, `/`, and `^`;
 - parentheses and unary `+` and `-`;
 - constants `pi` and `e`;
-- the lowercase, case-sensitive function names below;
+- Latin-letter function and constant names are case-insensitive (`sin`, `SIN`,
+  and `Sin` name the same function); their canonical spelling is lowercase;
 - comma-separated function arguments;
 - spaces, tabs, and line breaks between tokens, never within a number or name.
 

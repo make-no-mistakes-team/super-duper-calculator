@@ -184,6 +184,31 @@ func TestLimits(t *testing.T) {
 	}
 }
 
+func TestUTF16ExpressionLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name, expression string
+		code             string
+		limited          bool
+		span             contracts.SourceSpan
+	}{
+		{"multibyte character under limit", strings.Repeat("é", 600), "SYNTAX_ERROR", false, contracts.SourceSpan{Start: 0, End: 1}},
+		{"BMP character at limit", strings.Repeat(" ", 1023) + "é", "SYNTAX_ERROR", false, contracts.SourceSpan{Start: 1023, End: 1024}},
+		{"surrogate pair at limit", strings.Repeat(" ", 1022) + "😀", "SYNTAX_ERROR", false, contracts.SourceSpan{Start: 1022, End: 1024}},
+		{"surrogate pair over limit", strings.Repeat(" ", 1023) + "😀", "", true, contracts.SourceSpan{}},
+		{"NUL over limit", strings.Repeat("\x00", 1025), "", true, contracts.SourceSpan{}},
+	} {
+		ev, err := calculation.New().Evaluate(t.Context(), calculation.Input{Expression: tc.expression, AngleUnit: contracts.Degrees})
+		if tc.limited {
+			if !errors.Is(err, calculation.ErrExpressionLimit) {
+				t.Errorf("%s: err = %v, want ErrExpressionLimit", tc.name, err)
+			}
+		} else if err != nil || ev.Outcome.Error == nil || ev.Outcome.Error.Code != tc.code ||
+			ev.Outcome.Error.Span == nil || *ev.Outcome.Error.Span != tc.span {
+			t.Errorf("%s: err = %v, outcome %+v, want %s at %v", tc.name, err, ev.Outcome, tc.code, tc.span)
+		}
+	}
+}
+
 func TestCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -229,8 +254,11 @@ func TestScientificSuccess(t *testing.T) {
 		{"log(0.5, 2)", deg, -1},
 		{"pi", deg, math.Pi},
 		{"pi", rad, math.Pi},
+		{"Pi", deg, math.Pi},
 		{"e", deg, math.E},
 		{"2*pi", deg, 2 * math.Pi},
+		{"SIN(30)", deg, 0.5},
+		{"Log(8,2)", deg, 3},
 
 		// Parentheses around a single argument are optional.
 		{"sqrt 16", deg, 4},
@@ -351,8 +379,9 @@ func TestScientificErrors(t *testing.T) {
 		{"tan(5*pi/2)", rad, "DOMAIN_ERROR", ""},
 		{"tan(101*pi/2)", rad, "DOMAIN_ERROR", ""},
 
-		// Names are exact; translated names and decimal commas are not syntax.
+		// Unknown and translated names and decimal commas are not syntax.
 		{"unknown(1)", deg, "UNKNOWN_IDENTIFIER", "unknown"},
+		{"UNKNOWN(1)", deg, "UNKNOWN_IDENTIFIER", "unknown"},
 		{"sinus(30)", deg, "UNKNOWN_IDENTIFIER", "sinus"},
 		{"sinx", deg, "UNKNOWN_IDENTIFIER", "sinx"},
 		{"pie", deg, "UNKNOWN_IDENTIFIER", "pie"},
@@ -471,6 +500,7 @@ func TestScientificFacts(t *testing.T) {
 		{"log(100)+log(8,2)", contracts.CalculationFacts{Operators: map[string]int{"+": 1}, Functions: map[string]int{"log": 2}, OperationCount: 3, Depth: 1}},
 		{"log (log 100), 2", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{"log": 2}, OperationCount: 2, Depth: 1}},
 		{"sin 30", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{"sin": 1}, OperationCount: 1, Depth: 0}},
+		{"SIN(30)", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{"sin": 1}, OperationCount: 1, Depth: 1}},
 		// Constants are operands, not operations.
 		{"2*pi", contracts.CalculationFacts{Operators: map[string]int{"*": 1}, Functions: map[string]int{}, OperationCount: 1, Depth: 0}},
 		{"e", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{}, OperationCount: 0, Depth: 0}},

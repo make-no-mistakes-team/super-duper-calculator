@@ -7,8 +7,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 )
@@ -18,7 +18,7 @@ var ErrExpressionLimit = errors.New("expression limit exceeded")
 
 // Budgets from specs/calculation-engine.md.
 const (
-	maxLength  = 1024 // bytes
+	maxLength  = 1024 // UTF-16 code units
 	maxTokens  = 256
 	maxNesting = 32
 )
@@ -91,17 +91,13 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 // "SIN" -> "sin"). Unary signs stay separate tokens: -2^2 is "-" "2" "^" "2".
 // starts[k] is the byte offset of tokens[k]. Only ASCII is accepted.
 func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
-	lenth := 0
-	for _ , r := range(Expression) {
-		if r == 0 { continue }
-		lenth += utf16.RuneLen(r)
-		if lenth > maxLength {
+	length := 0
+	for _, r := range Expression {
+		length += utf16.RuneLen(r)
+		if length > maxLength {
 			return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
 				Params: map[string]any{"length": maxLength}}
-	}
-	if len(Expression) > maxLength {
-		return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
-			Params: map[string]any{"length": maxLength}}
+		}
 	}
 
 	tokens := make([]string, 0, maxTokens)
@@ -194,10 +190,10 @@ func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
 			if b < 0x80 {
 				return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
 					Params: map[string]any{"unexpected": Expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
-			} 
+			}
 			r, _ := utf8.DecodeRuneInString(Expression[i:])
 			return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
-				Params: map[string]any{"unexpected": string(r)}, Span: &contracts.SourceSpan{Start: i, End: i + utf16.RuneLen}}
+				Params: map[string]any{"unexpected": string(r)}, Span: &contracts.SourceSpan{Start: i, End: i + utf16.RuneLen(r)}}
 		}
 		if len(starts) < len(tokens) {
 			starts = append(starts, start)
