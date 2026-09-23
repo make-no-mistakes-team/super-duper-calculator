@@ -36,3 +36,11 @@ export async function postCalculation(request: CalculationRequest): Promise<Calc
     body: JSON.stringify(request),
   }));
 }
+
+export async function getReduction(calculationId: string, signal: AbortSignal): Promise<unknown> {
+  return readJson<unknown>(await fetch(`/api/calculations/${encodeURIComponent(calculationId)}/reduction`, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    signal,
+  }));
+}

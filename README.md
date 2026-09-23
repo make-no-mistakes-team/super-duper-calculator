@@ -41,6 +41,10 @@ their child processes. Go changes require restarting `make dev`; Vite reloads we
 changes. Go opens the database at startup and closes it during shutdown. A
 storage setup failure stops startup and leaves existing data intact.
 
+To inspect playback, calculate `sqrt(81)+2^3` and choose **Показать вычисление**
+under the saved result. The terminal-only preview is also available with
+`go run ./cmd/reduction-preview 'sqrt(81)+2^3'`.
+
 ### Local configuration and database state
 
 `make` tasks load `.env`; exported shell variables take precedence. Keep `.env`
@@ -58,6 +62,9 @@ with `.env.example` when configuration changes.
 - `STATISTICS_ENABLED` defaults to `true`. Set it to `false` to disable
   `GET /api/statistics`; calculations and history remain available. See the
   [statistics response](specs/application-service.md#optional-statistics-response).
+- `REDUCTION_PLAYBACK_ENABLED` defaults to `true`. Set it to `false` to hide
+  playback and return 404 from its read-only endpoint; calculations and saved
+  results remain available.
 - Go creates missing database directories and the file with private permissions.
   The default data directory and `.sqlite` files, including their sidecars, are
   ignored by Git. Keep custom database locations out of version control too.

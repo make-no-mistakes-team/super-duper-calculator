@@ -87,6 +87,20 @@ export type HistoryPage = {
   nextCursor: string | null;
 };
 
+export type ReductionStep = {
+  before: string;
+  span: SourceSpan;
+  replacement: string;
+  after: string;
+};
+
+export type ReductionResponse = {
+  calculationId: string;
+  initialExpression: string;
+  steps: ReductionStep[];
+  finalExpression: string;
+};
+
 export type LongestExpression = {
   calculationId: string;
   expression: string;

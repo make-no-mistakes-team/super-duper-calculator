@@ -22,4 +22,18 @@ export type HistoryMessages = {
 
 export type Messages = {
   history: HistoryMessages;
+  reduction: {
+    heading: string;
+    action: string;
+    record: string;
+    loading: string;
+    unavailable: string;
+    step: string;
+    next: string;
+    skip: string;
+    close: string;
+    replay: string;
+    final: string;
+    noSteps: string;
+  };
 };

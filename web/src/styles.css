@@ -143,6 +143,39 @@ h2 { margin: 0; font: 400 1.27rem/1.25 var(--serif); letter-spacing: -.015em; }
 .result-highlight { display: block; color: #e4ece8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .result-highlight mark { background: #a55c4c; color: #fff; }
 
+.playback { margin: -7px 0 31px; padding: 0 0 28px; border-bottom: 1px solid var(--line); }
+.playback-source { margin: 10px 0 15px; color: var(--muted); font-size: .86rem; overflow-wrap: anywhere; }
+.playback-source code { color: #e4ece8; }
+.playback-action, .playback-controls button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid #668083;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font-size: .87rem;
+  font-weight: 700;
+}
+.playback-action:hover, .playback-controls button:hover { border-color: var(--accent); background: var(--surface); }
+.playback-note { margin: 10px 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.playback-note--error { color: var(--error); }
+.playback-stage { margin: 16px 0 13px; padding: 17px 19px 20px; border-radius: 5px; background: var(--surface); }
+.playback-count { margin: 0 0 10px; color: var(--muted); font-size: .82rem; }
+.playback-expression {
+  display: block;
+  color: #f5f3ec;
+  font: 400 clamp(1.15rem, 2.8vw, 1.55rem)/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.playback-expression mark { padding: 1px 2px; border-radius: 2px; background: var(--accent); color: #102124; }
+.playback-expression--after { animation: result-in .24s cubic-bezier(.2, .8, .2, 1); }
+.playback-expression--static { margin-top: 11px; color: var(--accent); }
+.playback-expression--final { color: var(--accent); }
+.playback-replacement { margin: 9px 0 0; color: var(--muted); font-size: .95rem; }
+.playback-replacement code { color: var(--accent); }
+.playback-controls { display: flex; flex-wrap: wrap; gap: 9px; }
+
 .keypad-heading { margin-bottom: 16px; }
 .keypad-heading span, .scientific-heading { color: var(--muted); font-size: .85rem; }
 .calculator-keys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
