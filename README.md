@@ -61,12 +61,11 @@ with `.env.example` when configuration changes.
 - Reopening the same file preserves committed data. Connection and durability
   settings are defined in [Application Service](specs/application-service.md#database-configuration).
 
-On POSIX systems, existing database directories, files, and SQLite sidecars must
+On POSIX systems, the existing database directory, file, and SQLite sidecars must
 belong to the application's user and have no group or other permissions.
 Their paths cannot be symlinks. If startup rejects a path, stop the application
-and correct its ownership or permissions; the service does not change them
-automatically. Startup errors name the failed stage without exposing SQL or
-the configured path.
+and correct its ownership or permissions; the service will not change them.
+Startup errors identify the failed stage without exposing SQL or the path.
 
 To start with an empty database, stop the app, choose an unused `DATABASE_PATH`,
 and restart. The previous database is retained. Deleting an old database is a
@@ -80,18 +79,15 @@ committed data still in its WAL.
 
 ### API sessions and limits
 
-Call `GET /api/session` before calculations or history requests. Missing or
-expired identity returns `401 SESSION_REQUIRED`; only the session operation
-creates a replacement identity. The existing browser client bootstraps this
-session on load.
+API clients call `GET /api/session` before calculating or reading history.
+Missing or expired identity returns `401 SESSION_REQUIRED`; only the session
+operation creates a replacement. The browser client does this on load.
 
-The API shares a process-wide rate limit of 50 requests/second with a burst of
-100 and admits at most 64 executing handlers. Rate rejection returns
-`429 RATE_LIMITED` with `Retry-After`; saturation or a deadline returns a safe
-503. Retry an uncertain calculation with its original `requestId`.
-Health endpoints remain available outside the API budget.
-See [Runtime request policy](specs/application-service.md#runtime-request-policy)
-for connection, payload, timeout, and response bounds.
+Honor `Retry-After` on `429 RATE_LIMITED`. Saturation or a deadline returns 503;
+retry an uncertain calculation with its original `requestId`. Health endpoints
+remain outside the API budget. The
+[runtime request policy](specs/application-service.md#runtime-request-policy)
+defines rate, concurrency, connection, payload, timeout, and response bounds.
 
 ## Build and check
 
