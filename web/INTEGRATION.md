@@ -12,8 +12,10 @@ calculation, durable records, and capability flags. Feature components should
 consume `src/contracts.ts` types, receive server data from the root, and report
 user actions upward. They should not add another evaluator or API client.
 
-The root loads capabilities once and passes them to controls. A failed
-capability request leaves the core keypad available and shows a warning.
+The root loads capabilities once and passes them to controls and history.
+History keeps stored outcomes readable while warning when an old expression
+uses a disabled extension. A failed capability request leaves the core keypad
+available and shows a warning.
 Optional controls should mount only after their complete server behavior is
 enabled and integrated. For rooms, keep the current room code and publication
 choice in `App` state for that tab. Supply room context explicitly on each new

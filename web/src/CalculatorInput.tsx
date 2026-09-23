@@ -74,12 +74,26 @@ export function CalculatorInput({
     focusAt(start);
   }
 
+  function renderKey(key: string, scientific = false) {
+    return (
+      <button
+        key={key}
+        type="button"
+        className={`calculator-key${scientific ? ' calculator-key--scientific' : ''}${operatorKeys.has(key) ? ' calculator-key--operator' : ''}`}
+        aria-label={`Вставить ${key}`}
+        onClick={() => insert(key)}
+      >
+        {labels[key] ?? key}
+      </button>
+    );
+  }
+
   return (
     <section className="calculator-input" aria-labelledby="calculator-input-heading">
       <div className="input-heading-row"><h2 id="calculator-input-heading">Выражение</h2><span>ВВОД / 01</span></div>
       <div className="input-help">
         <label className="calculator-input-label" htmlFor="expression">Введите выражение или используйте клавиши ниже</label>
-        <span aria-label={`Длина выражения: ${expression.length} из ${expressionLimit}`}>{expression.length}/{expressionLimit}</span>
+        <span id="expression-length" aria-label={`Длина выражения: ${expression.length} из ${expressionLimit}`}>{expression.length}/{expressionLimit}</span>
       </div>
       <textarea
         ref={inputRef}
@@ -89,6 +103,7 @@ export function CalculatorInput({
         inputMode="text"
         spellCheck={false}
         maxLength={expressionLimit}
+        aria-describedby={capabilities ? 'expression-length expression-limits' : 'expression-length'}
         value={expression}
         onChange={(event) => onExpressionChange(event.target.value)}
         onKeyDown={(event) => {
@@ -99,6 +114,11 @@ export function CalculatorInput({
           }
         }}
       />
+      {capabilities && (
+        <p id="expression-limits" className="expression-limits">
+          До {capabilities.limits.tokens} токенов · вложенность до {capabilities.limits.nesting} уровней
+        </p>
+      )}
 
       <div className="calculator-actions">
         <div className="calculator-settings">
@@ -122,23 +142,11 @@ export function CalculatorInput({
 
       <div className="keypad-heading"><h2>Клавиши</h2><span>АРИФМЕТИКА</span></div>
       <div className="calculator-keys" aria-label="Кнопки калькулятора">
-        {arithmeticKeys.map((key) => (
-          <button
-            key={key}
-            type="button"
-            className={`calculator-key${operatorKeys.has(key) ? ' calculator-key--operator' : ''}`}
-            aria-label={`Вставить ${key}`}
-            onClick={() => insert(key)}
-          >
-            {labels[key] ?? key}
-          </button>
-        ))}
+        {arithmeticKeys.map((key) => renderKey(key))}
       </div>
       <div className="scientific-heading">НАУЧНЫЕ ФУНКЦИИ</div>
       <div className="scientific-keys" aria-label="Научные функции">
-        {availableScientificKeys.map((key) => (
-          <button key={key} type="button" className="calculator-key calculator-key--scientific" aria-label={`Вставить ${key}`} onClick={() => insert(key)}>{labels[key] ?? key}</button>
-        ))}
+        {availableScientificKeys.map((key) => renderKey(key, true))}
       </div>
       <div className="editor-tools">
         <button type="button" onClick={erase}>⌫ <span>Стереть</span></button>

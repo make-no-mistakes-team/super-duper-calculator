@@ -14,6 +14,15 @@ type ResultState =
 const messages = getMessages('ru');
 const networkError = 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
 
+function unavailableExtension(record: CalculationRecord, capabilities: Capabilities | null): string | null {
+  if (capabilities === null) return null;
+  const expression = record.expression;
+  if (!capabilities.features.factorial && expression.includes('!')) return 'факториал';
+  if (!capabilities.features.percentage && expression.includes('%')) return 'проценты';
+  if (!capabilities.features.remainder && /\bmod\s*\(/.test(expression)) return 'остаток от деления';
+  return null;
+}
+
 function displayValue(value: string) {
   const number = Number(value);
   const text = Object.is(number, -0) ? '-0' : String(Number(number.toPrecision(12)));
@@ -62,6 +71,7 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [restoredRecord, setRestoredRecord] = useState<CalculationRecord | null>(null);
   const submissionSequence = useRef(0);
   const historySequence = useRef(0);
   const copySequence = useRef(0);
@@ -147,6 +157,7 @@ export default function App() {
   const selectHistory = useCallback((record: CalculationRecord) => {
     setExpression(record.expression);
     setAngleUnit(record.context.angleUnit);
+    setRestoredRecord(record);
     document.getElementById('expression')?.focus();
   }, []);
 
@@ -164,6 +175,7 @@ export default function App() {
   const source = result.kind === 'record' ? result.record.expression : '';
   const span = outcome?.kind === 'error' ? outcome.error.span : null;
   const display = outcome?.kind === 'success' ? displayValue(outcome.value) : null;
+  const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(restoredRecord, capabilities);
 
   return (
     <main className="workspace">
@@ -180,10 +192,16 @@ export default function App() {
         expression={expression}
         angleUnit={angleUnit}
         capabilities={capabilities}
-        onExpressionChange={setExpression}
+        onExpressionChange={(value) => { setExpression(value); setRestoredRecord(null); }}
         onAngleUnitChange={setAngleUnit}
         onSubmit={() => void submit({ requestId: crypto.randomUUID(), expression, angleUnit })}
       >
+
+      {restoredUnavailable && (
+        <p className="restored-unsupported" role="status">
+          Операция «{restoredUnavailable}» сейчас недоступна. Сохранённый ответ остаётся в истории; исправьте выражение перед новым вычислением.
+        </p>
+      )}
 
       <section className="calculation-result" aria-labelledby="result-heading">
         <div className="result-heading-row"><h2 id="result-heading">Результат</h2><span>ВЫВОД / 01</span></div>
@@ -250,6 +268,7 @@ export default function App() {
         messages={messages}
         onLoadMore={() => void loadHistory(nextCursor)}
         onSelect={selectHistory}
+        isUnsupported={(record) => unavailableExtension(record, capabilities) !== null}
       />
       {historyError && !historyLoading && (
         <button type="button" onClick={() => void loadHistory(null)}>Повторить загрузку истории</button>
