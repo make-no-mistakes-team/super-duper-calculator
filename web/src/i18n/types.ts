@@ -2,6 +2,12 @@ export type Language = 'ru' | 'en';
 
 export type HistoryMessages = {
   title: string;
+  demo: {
+    title: string;
+    languageLabel: string;
+    scenarioLabel: string;
+    scenarios: { normal: string; empty: string; error: string };
+  };
   loading: string;
   empty: string;
   loadMore: string;

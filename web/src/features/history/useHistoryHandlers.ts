@@ -63,6 +63,8 @@ export function useHistoryHandlers(
   );
 
   useEffect(() => {
+    setItems([]);
+    setNextCursor(null);
     void load(null);
     return () => {
       requestIdRef.current++;
