@@ -33,18 +33,127 @@ type Evaluation struct {
 	Facts   *contracts.CalculationFacts
 }
 
+// ReductionStep describes one operation in the expression currently displayed.
+// Span indexes UTF-16 code units in Before, not in the submitted expression.
+type ReductionStep struct {
+	Before      string
+	Span        contracts.SourceSpan
+	Replacement string
+	After       string
+}
+
+// Reduction is the pure mathematical result used by the read-only API. Outcome
+// follows Evaluate's error contract; a failed reduction has no steps.
+type Reduction struct {
+	InitialExpression string
+	Steps             []ReductionStep
+	FinalExpression   string
+	Outcome           contracts.Outcome
+}
+
 // Evaluate returns mathematical failures in Outcome. Internal failures and work
 // limit violations use the error result; callers must not persist those as maths.
 type Engine interface {
 	Evaluate(context.Context, Input) (Evaluation, error)
 }
 
+// ReductionEngine adds optional on-demand steps without widening consumers
+// that only need ordinary evaluation.
+type ReductionEngine interface {
+	Engine
+	Reduce(context.Context, Input) (Reduction, error)
+}
+
 type engine struct{}
 
-// New returns the Engine.
-func New() Engine { return engine{} }
+// New returns the calculation engine and its optional reduction capability.
+func New() ReductionEngine { return engine{} }
 
 func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
+	return evaluate(ctx, in, nil)
+}
+
+// Reduce computes the same outcome as Evaluate and, on success, builds a
+// deterministic presentation copy without changing the submitted expression.
+func (engine) Reduce(ctx context.Context, in Input) (Reduction, error) {
+	trace := make([]reductionEvent, 0, maxTokens/2)
+	evaluation, err := evaluate(ctx, in, &trace)
+	if err != nil {
+		return Reduction{}, err
+	}
+	result := Reduction{InitialExpression: in.Expression, Outcome: evaluation.Outcome}
+	if evaluation.Outcome.Kind != "success" {
+		return result, nil
+	}
+
+	result.FinalExpression = evaluation.Outcome.Value
+	result.Steps = make([]ReductionStep, 0, len(trace))
+	current := in.Expression
+	edits := make([]reductionEdit, 0, len(trace))
+	for i, event := range trace {
+		if err := ctx.Err(); err != nil {
+			return Reduction{}, err
+		}
+		// Parsed expressions contain only ASCII, so byte and UTF-16 offsets
+		// agree. Events retain source offsets; prior edits shift their current
+		// positions, including edits nested inside a later parent operation.
+		span := event.span
+		for _, edit := range edits {
+			if edit.originalEnd <= event.span.Start {
+				span.Start += edit.delta
+			}
+			if edit.originalEnd <= event.span.End {
+				span.End += edit.delta
+			}
+		}
+		if i == len(trace)-1 {
+			// Parentheses and surrounding whitespace are part of the final
+			// displayed expression, not a separate formatting-only step.
+			span = contracts.SourceSpan{Start: 0, End: len(current)}
+		}
+		if span.Start < 0 || span.End < span.Start || span.End > len(current) {
+			return Reduction{}, ErrReductionInconsistent
+		}
+		replacement := canonical(event.value)
+		if i < len(trace)-1 && event.value < 0 {
+			replacement = "(" + replacement + ")"
+		}
+		after := current[:span.Start] + replacement + current[span.End:]
+		result.Steps = append(result.Steps, ReductionStep{
+			Before: current, Span: span, Replacement: replacement, After: after,
+		})
+		edits = append(edits, reductionEdit{
+			originalEnd: event.span.End, delta: len(replacement) - (span.End - span.Start),
+		})
+		current = after
+	}
+	if len(trace) > 0 && current != result.FinalExpression {
+		return Reduction{}, ErrReductionInconsistent
+	}
+	return result, nil
+}
+
+// ErrReductionInconsistent protects the service from exposing an invalid trace.
+var ErrReductionInconsistent = errors.New("reduction trace inconsistent")
+
+type reductionEvent struct {
+	span  contracts.SourceSpan
+	value float64
+}
+
+type reductionEdit struct {
+	originalEnd int
+	delta       int
+}
+
+func canonical(v float64) string {
+	if v == 0 {
+		return "0" // normalize negative zero
+	}
+	return strconv.FormatFloat(v, 'g', -1, 64)
+}
+
+func evaluate(ctx context.Context, in Input, trace *[]reductionEvent) (Evaluation, error) {
 	if err := ctx.Err(); err != nil {
 		return Evaluation{}, err
 	}
@@ -64,7 +173,7 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 	tokens, starts, merr := tokenize(in.Expression)
 	var expr Expr
 	if merr == nil {
-		expr, merr = parse(tokens, starts, unit, facts)
+		expr, merr = parse(tokens, starts, unit, facts, trace)
 	}
 	if merr != nil {
 		if merr.Code == "EXPRESSION_LIMIT" {
@@ -77,12 +186,9 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 	if merr != nil {
 		return Evaluation{Outcome: contracts.Outcome{Kind: "error", Error: merr}, Facts: facts}, nil
 	}
-	if v == 0 {
-		v = 0 // -0 -> 0
-	}
 	return Evaluation{Outcome: contracts.Outcome{
 		Kind:  "success",
-		Value: strconv.FormatFloat(v, 'g', -1, 64),
+		Value: canonical(v),
 	}, Facts: facts}, nil
 }
 
@@ -343,10 +449,11 @@ var operators = map[string]operator{
 // Every binary operator and function call is one operation recorded in facts;
 // facts.Depth is the deepest parenthesis nesting. Every operand carries the
 // span of its source text, evaluation errors point at the failed operation.
-func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contracts.CalculationFacts) (Expr, *contracts.MathError) {
+func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contracts.CalculationFacts, trace *[]reductionEvent) (Expr, *contracts.MathError) {
 	type operand struct {
-		expr Expr
-		span contracts.SourceSpan
+		expr    Expr
+		span    contracts.SourceSpan
+		hasWork bool
 	}
 	type pending struct {
 		key string // operators key or "("
@@ -382,6 +489,13 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		}
 		args := append([]operand(nil), operands[len(operands)-o.arity:]...)
 		operands = operands[:len(operands)-o.arity]
+		hasWork := o.fn || o.arity == 2
+		for _, arg := range args {
+			hasWork = hasWork || arg.hasWork
+		}
+		// Unary signs on an atomic value are part of that value. Signs on a
+		// computed expression need their own step after the child operation.
+		record := o.fn || o.arity == 2 || o.arity == 1 && args[0].hasWork
 
 		span := contracts.SourceSpan{Start: starts[p.at], End: starts[p.at] + len(tokens[p.at])} // constant
 		if len(args) > 0 {
@@ -390,7 +504,7 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 				span.Start = args[0].span.Start
 			}
 		}
-		operands = append(operands, operand{span: span, expr: func() (float64, *contracts.MathError) {
+		operands = append(operands, operand{span: span, hasWork: hasWork, expr: func() (float64, *contracts.MathError) {
 			x := make([]float64, len(args))
 			for k, a := range args {
 				v, merr := a.expr()
@@ -407,6 +521,9 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			case math.IsInf(v, 0):
 				merr = &contracts.MathError{Code: "NUMERIC_OVERFLOW", Stage: "evaluate", Params: map[string]any{}}
 			default:
+				if trace != nil && record {
+					*trace = append(*trace, reductionEvent{span: span, value: v})
+				}
 				return v, nil
 			}
 			if merr.Span == nil {
