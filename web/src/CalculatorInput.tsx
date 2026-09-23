@@ -1,24 +1,19 @@
 import { useRef, type ReactNode } from 'react';
-import type { AngleUnit } from './contracts';
+import type { AngleUnit, Capabilities } from './contracts';
 
 type CalculatorInputProps = {
   expression: string;
   angleUnit: AngleUnit;
+  capabilities?: Capabilities | null;
   onExpressionChange: (expression: string) => void;
   onAngleUnitChange: (angleUnit: AngleUnit) => void;
   onSubmit?: () => void;
   children?: ReactNode;
 };
 
-const keys = [
-  ['7', '8', '9', '/', 'sqrt('],
-  ['4', '5', '6', '*', 'sin('],
-  ['1', '2', '3', '-', 'cos('],
-  ['0', '.', '(', ')', 'tan('],
-  ['pi', 'e', '^', '+', ','],
-  ['abs(', 'exp(', 'ln(', 'log(', 'asin('],
-  ['acos(', 'atan('],
-];
+const arithmeticKeys = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '(', ')', 'pi', 'e', '^', '+'];
+const scientificKeys = ['sqrt(', 'sin(', 'cos(', 'tan(', 'abs(', 'exp(', 'ln(', 'log(', 'asin(', 'acos(', 'atan(', ','];
+const operatorKeys = new Set(['/', '*', '-', '+', '^']);
 
 const labels: Record<string, string> = {
   '/': '÷',
@@ -33,12 +28,21 @@ const labels: Record<string, string> = {
 export function CalculatorInput({
   expression,
   angleUnit,
+  capabilities,
   onExpressionChange,
   onAngleUnitChange,
   onSubmit,
   children,
 }: CalculatorInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const expressionLimit = capabilities?.limits.expressionLength ?? 1024;
+  const availableScientificKeys = [
+    ...scientificKeys.filter((key) =>
+      key === ',' || capabilities === null || capabilities === undefined || key.slice(0, -1) in capabilities.functions),
+    ...(capabilities?.features.factorial ? ['!'] : []),
+    ...(capabilities?.features.percentage ? ['%'] : []),
+    ...(capabilities?.features.remainder ? ['mod('] : []),
+  ];
 
   function focusAt(position: number) {
     requestAnimationFrame(() => {
@@ -52,7 +56,7 @@ export function CalculatorInput({
     const start = input?.selectionStart ?? expression.length;
     const end = input?.selectionEnd ?? expression.length;
     const next = expression.slice(0, start) + value + expression.slice(end);
-    if (next.length > 1024) return;
+    if (next.length > expressionLimit) return;
     onExpressionChange(next);
     focusAt(start + value.length);
   }
@@ -72,22 +76,23 @@ export function CalculatorInput({
 
   return (
     <section className="calculator-input" aria-labelledby="calculator-input-heading">
-      <h2 id="calculator-input-heading">Выражение</h2>
-      <label className="calculator-input-label" htmlFor="expression">
-        Введите выражение или используйте кнопки
-      </label>
+      <div className="input-heading-row"><h2 id="calculator-input-heading">Выражение</h2><span>ВВОД / 01</span></div>
+      <div className="input-help">
+        <label className="calculator-input-label" htmlFor="expression">Введите выражение или используйте клавиши ниже</label>
+        <span aria-label={`Длина выражения: ${expression.length} из ${expressionLimit}`}>{expression.length}/{expressionLimit}</span>
+      </div>
       <textarea
         ref={inputRef}
         id="expression"
         className="calculator-expression"
-        rows={3}
+        rows={2}
         inputMode="text"
         spellCheck={false}
-        maxLength={1024}
+        maxLength={expressionLimit}
         value={expression}
         onChange={(event) => onExpressionChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey
+          if (event.key === 'Enter' && expression.trim() !== '' && !event.shiftKey
             && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && onSubmit) {
             event.preventDefault();
             onSubmit();
@@ -95,49 +100,56 @@ export function CalculatorInput({
         }}
       />
 
-      <div className="calculator-settings">
-        <label htmlFor="angle-unit">Углы</label>
-        <select
-          id="angle-unit"
-          value={angleUnit}
-          onChange={(event) => onAngleUnitChange(event.target.value as AngleUnit)}
-        >
-          <option value="deg">Градусы</option>
-          <option value="rad">Радианы</option>
-        </select>
+      <div className="calculator-actions">
+        <div className="calculator-settings">
+          <label htmlFor="angle-unit">Углы</label>
+          <select
+            id="angle-unit"
+            value={angleUnit}
+            onChange={(event) => onAngleUnitChange(event.target.value as AngleUnit)}
+          >
+            <option value="deg">Градусы</option>
+            <option value="rad">Радианы</option>
+          </select>
+        </div>
+        {onSubmit && (
+          <button type="button" className="calculator-submit" disabled={expression.trim() === ''} onClick={onSubmit}>
+            Вычислить <span aria-hidden="true">↗</span>
+          </button>
+        )}
       </div>
-
-      {onSubmit && (
-        <button type="button" className="calculator-submit" onClick={onSubmit}>
-          Вычислить
-        </button>
-      )}
       {children}
 
+      <div className="keypad-heading"><h2>Клавиши</h2><span>АРИФМЕТИКА</span></div>
       <div className="calculator-keys" aria-label="Кнопки калькулятора">
-        {keys.flat().map((key) => (
+        {arithmeticKeys.map((key) => (
           <button
             key={key}
             type="button"
-            className="calculator-key"
+            className={`calculator-key${operatorKeys.has(key) ? ' calculator-key--operator' : ''}`}
             aria-label={`Вставить ${key}`}
             onClick={() => insert(key)}
           >
             {labels[key] ?? key}
           </button>
         ))}
-        <button type="button" className="calculator-key calculator-key--wide" onClick={erase}>
-          Стереть
-        </button>
+      </div>
+      <div className="scientific-heading">НАУЧНЫЕ ФУНКЦИИ</div>
+      <div className="scientific-keys" aria-label="Научные функции">
+        {availableScientificKeys.map((key) => (
+          <button key={key} type="button" className="calculator-key calculator-key--scientific" aria-label={`Вставить ${key}`} onClick={() => insert(key)}>{labels[key] ?? key}</button>
+        ))}
+      </div>
+      <div className="editor-tools">
+        <button type="button" onClick={erase}>⌫ <span>Стереть</span></button>
         <button
           type="button"
-          className="calculator-key calculator-key--wide"
           onClick={() => {
             onExpressionChange('');
             focusAt(0);
           }}
         >
-          Очистить
+          Очистить ввод
         </button>
       </div>
     </section>

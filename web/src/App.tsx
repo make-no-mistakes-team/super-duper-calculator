@@ -1,31 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiStatusError, getCapabilities, getHistory, postCalculation, startSession } from './api';
 import { CalculatorInput } from './CalculatorInput';
-import type { AngleUnit, CalculationRecord, CalculationRequest, CalculationResponse, HistoryPage } from './contracts';
+import type { AngleUnit, CalculationRecord, CalculationRequest, Capabilities, CalculationResponse } from './contracts';
 import { History } from './features/history/History';
 import { getMessages } from './i18n';
 
 type ResultState =
   | { kind: 'idle' }
   | { kind: 'loading'; request: CalculationRequest }
-  | { kind: 'record'; record: CalculationRecord }
+  | { kind: 'record'; record: CalculationRecord; publication: CalculationResponse['publication']['status'] }
   | { kind: 'failed'; message: string; retryable: boolean; request: CalculationRequest };
 
 const messages = getMessages('ru');
 const networkError = 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
 
-class RequestStatusError extends Error {
-  constructor(readonly status: number) {
-    super('HTTP request failed');
-  }
-}
-
 function displayValue(value: string) {
   const number = Number(value);
-  const text = String(Number(number.toPrecision(12)));
-  return { text, approximate: Number(text) !== number };
+  const text = Object.is(number, -0) ? '-0' : String(Number(number.toPrecision(12)));
+  return { text, approximate: !Object.is(Number(text), number) };
 }
 
-function requestError(status: number): { message: string; retryable: boolean } {
+function requestError(error: ApiStatusError): { message: string; retryable: boolean } {
+  const { status } = error;
   if (status === 413) {
     return {
       message: 'Превышены ограничения запроса: длина выражения, число токенов или глубина вложенности.',
@@ -38,8 +34,16 @@ function requestError(status: number): { message: string; retryable: boolean } {
   if (status === 409) {
     return { message: 'Действие уже использовано для другого выражения.', retryable: false };
   }
-  if (status === 408 || status === 429) {
-    return { message: 'Запрос временно отклонён. Повторите попытку позже.', retryable: true };
+  if (status === 401) {
+    return { message: 'Сессия истекла. Повторите попытку, чтобы создать новую.', retryable: true };
+  }
+  if (status === 429) {
+    return { message: error.retryAfterSeconds === null
+      ? 'Слишком много запросов. Повторите попытку позже.'
+      : `Слишком много запросов. Повторите через ${error.retryAfterSeconds} с.`, retryable: true };
+  }
+  if (status === 408) {
+    return { message: 'Время ожидания истекло. Повторите попытку.', retryable: true };
   }
   if (status >= 400 && status < 500) {
     return { message: 'Сервер отклонил запрос. Проверьте его и отправьте заново.', retryable: false };
@@ -55,17 +59,18 @@ export default function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(false);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [capabilitiesError, setCapabilitiesError] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const submissionSequence = useRef(0);
   const historySequence = useRef(0);
+  const copySequence = useRef(0);
   const sessionPromise = useRef<Promise<void> | null>(null);
   const mounted = useRef(false);
 
   const ensureSession = useCallback(() => {
     if (sessionPromise.current === null) {
-      sessionPromise.current = fetch('/api/session', { cache: 'no-store' })
-        .then((response) => {
-          if (!response.ok) throw new RequestStatusError(response.status);
-        })
+      sessionPromise.current = startSession()
         .catch((error: unknown) => {
           sessionPromise.current = null;
           throw error;
@@ -81,18 +86,15 @@ export default function App() {
     try {
       await ensureSession();
       if (!mounted.current || sequence !== historySequence.current) return;
-      const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
-      const response = await fetch(`/api/history${query}`, { cache: 'no-store' });
-      if (!mounted.current || sequence !== historySequence.current) return;
-      if (!response.ok) throw new Error('History request failed');
-      const page = (await response.json()) as HistoryPage;
+      const page = await getHistory(cursor);
       if (!mounted.current || sequence !== historySequence.current) return;
       setItems((previous) => cursor === null ? page.items : [
         ...previous,
         ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
       ]);
       setNextCursor(page.nextCursor);
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiStatusError && error.status === 401) sessionPromise.current = null;
       if (mounted.current && sequence === historySequence.current) setHistoryError(true);
     } finally {
       if (mounted.current && sequence === historySequence.current) setHistoryLoading(false);
@@ -102,6 +104,9 @@ export default function App() {
   useEffect(() => {
     mounted.current = true;
     void loadHistory(null);
+    void getCapabilities().then((data) => {
+      if (mounted.current) { setCapabilities(data); setCapabilitiesError(false); }
+    }).catch(() => { if (mounted.current) setCapabilitiesError(true); });
     return () => {
       mounted.current = false;
       historySequence.current++;
@@ -111,26 +116,22 @@ export default function App() {
 
   const submit = useCallback(async (request: CalculationRequest) => {
     const sequence = ++submissionSequence.current;
+    copySequence.current++;
+    setCopyStatus('idle');
     setResult({ kind: 'loading', request });
     try {
       await ensureSession();
       if (!mounted.current) return;
-      const response = await fetch('/api/calculations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-      });
-      if (!mounted.current) return;
-      if (!response.ok) throw new RequestStatusError(response.status);
-      const data = (await response.json()) as CalculationResponse;
+      const data = await postCalculation(request);
       if (mounted.current && sequence === submissionSequence.current) {
-        setResult({ kind: 'record', record: data.calculation });
+        setResult({ kind: 'record', record: data.calculation, publication: data.publication.status });
       }
       if (mounted.current) void loadHistory(null);
     } catch (error) {
       if (mounted.current && sequence === submissionSequence.current) {
-        const failure = error instanceof RequestStatusError
-          ? requestError(error.status)
+        if (error instanceof ApiStatusError && error.status === 401) sessionPromise.current = null;
+        const failure = error instanceof ApiStatusError
+          ? requestError(error)
           : error instanceof SyntaxError
             ? { message: 'Не удалось прочитать ответ сервера. Повторите попытку.', retryable: true }
             : { message: networkError, retryable: true };
@@ -149,6 +150,16 @@ export default function App() {
     document.getElementById('expression')?.focus();
   }, []);
 
+  const copyResult = useCallback(async (value: string) => {
+    const sequence = ++copySequence.current;
+    try {
+      await navigator.clipboard.writeText(value);
+      if (sequence === copySequence.current) setCopyStatus('copied');
+    } catch {
+      if (sequence === copySequence.current) setCopyStatus('failed');
+    }
+  }, []);
+
   const outcome = result.kind === 'record' ? result.record.outcome : null;
   const source = result.kind === 'record' ? result.record.expression : '';
   const span = outcome?.kind === 'error' ? outcome.error.span : null;
@@ -156,23 +167,27 @@ export default function App() {
 
   return (
     <main className="workspace">
-      <header>
-        <p className="eyebrow">Научный калькулятор</p>
-        <h1>Супер-дупер калькулятор</h1>
-        <p className="intro">Введите выражение и нажмите Enter или «Вычислить».</p>
+      <header className="workspace-header">
+        <div className="brand-mark" aria-hidden="true">∑</div>
+        <div>
+          <p className="eyebrow">Научный калькулятор</p>
+          <h1>Супер-дупер <span>калькулятор</span></h1>
+        </div>
+        <div className="workspace-state" aria-label="Режим: личный">ЛИЧНЫЙ РЕЖИМ <span aria-hidden="true" /></div>
       </header>
 
       <CalculatorInput
         expression={expression}
         angleUnit={angleUnit}
+        capabilities={capabilities}
         onExpressionChange={setExpression}
         onAngleUnitChange={setAngleUnit}
         onSubmit={() => void submit({ requestId: crypto.randomUUID(), expression, angleUnit })}
       >
 
       <section className="calculation-result" aria-labelledby="result-heading">
-        <h2 id="result-heading">Результат</h2>
-        {result.kind === 'idle' && <p>Здесь появится результат вычисления.</p>}
+        <div className="result-heading-row"><h2 id="result-heading">Результат</h2><span>ВЫВОД / 01</span></div>
+        {result.kind === 'idle' && <p className="result-placeholder">Готов к вычислению<span className="cursor-mark" aria-hidden="true">_</span></p>}
         {result.kind === 'loading' && (
           <p className="result-source" role="status">
             Вычисляем: <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
@@ -190,16 +205,22 @@ export default function App() {
           </div>
         )}
         {result.kind === 'record' && (
-          <div role={outcome?.kind === 'error' ? 'alert' : 'status'}>
+          <div role={outcome?.kind === 'error' ? 'alert' : undefined}>
             <p className="result-source">
               <code>{source}</code> · {messages.history.angleUnitLabel[result.record.context.angleUnit]}
             </p>
+            {result.publication === 'published' && <p className="publication-status">Опубликовано в комнате</p>}
+            {result.publication === 'unavailable' && <p className="publication-status publication-status--warning">Вычисление сохранено лично; публикация недоступна.</p>}
             {outcome?.kind === 'success' ? (
               <>
-                <p className="result-value">{display?.approximate ? '≈' : '='} {display?.text}</p>
+                <p className="result-value" role="status"><span>{display?.approximate ? '≈' : '='}</span> {display?.text}</p>
                 {display?.approximate && (
                   <p className="full-value">Полное значение: <code>{outcome.value}</code></p>
                 )}
+                <button type="button" className="copy-result" onClick={() => void copyResult(outcome.value)}>
+                  {copyStatus === 'copied' ? 'Скопировано' : 'Скопировать точное значение'}
+                </button>
+                {copyStatus === 'failed' && <p className="copy-error" role="alert">Не удалось скопировать. Выделите значение вручную: <code>{outcome.value}</code></p>}
               </>
             ) : outcome?.kind === 'error' ? (
               <>
@@ -220,7 +241,7 @@ export default function App() {
       </section>
       </CalculatorInput>
 
-      <History
+      <aside className="history-rail"><History
         items={items}
         nextCursor={nextCursor}
         loading={historyLoading}
@@ -233,6 +254,8 @@ export default function App() {
       {historyError && !historyLoading && (
         <button type="button" onClick={() => void loadHistory(null)}>Повторить загрузку истории</button>
       )}
+      {capabilitiesError && <p className="capabilities-note" role="status">Не удалось проверить возможности сервера. Доступны базовые операции.</p>}
+      </aside>
     </main>
   );
 }
