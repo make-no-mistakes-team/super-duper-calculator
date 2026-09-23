@@ -1,114 +1,191 @@
-import { HistoryDemo } from './features/history/HistoryDemo';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CalculatorInput } from './CalculatorInput';
+import type { AngleUnit, CalculationRecord, CalculationRequest, CalculationResponse, HistoryPage } from './contracts';
+import { History } from './features/history/History';
+import { getMessages } from './i18n';
 
-type HealthState =
-  | { kind: 'loading' }
-  | { kind: 'success' }
-  | { kind: 'failure'; message: string };
+type ResultState =
+  | { kind: 'idle' }
+  | { kind: 'loading'; expression: string }
+  | { kind: 'record'; record: CalculationRecord }
+  | { kind: 'failed'; message: string; request: CalculationRequest };
+
+const messages = getMessages('ru');
+
+function displayValue(value: string) {
+  const number = Number(value);
+  const text = String(Number(number.toPrecision(12)));
+  return { text, approximate: Number(text) !== number };
+}
+
+function requestError(status: number): string {
+  if (status === 413) return 'Выражение слишком длинное.';
+  if (status === 400) return 'Некорректный запрос. Проверьте выражение и настройки.';
+  if (status === 409) return 'Действие уже использовано для другого выражения.';
+  return 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
+}
 
 export default function App() {
-  const [health, setHealth] = useState<HealthState>({ kind: 'loading' });
-  const activeRequest = useRef<AbortController | null>(null);
+  const [expression, setExpression] = useState('');
+  const [angleUnit, setAngleUnit] = useState<AngleUnit>('deg');
+  const [result, setResult] = useState<ResultState>({ kind: 'idle' });
+  const [items, setItems] = useState<CalculationRecord[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(false);
+  const submissionSequence = useRef(0);
+  const historySequence = useRef(0);
+  const sessionPromise = useRef<Promise<void> | null>(null);
 
-  const checkHealth = useCallback(async () => {
-    activeRequest.current?.abort();
-    const controller = new AbortController();
-    activeRequest.current = controller;
-    setHealth({ kind: 'loading' });
-
-    try {
-      const response = await fetch('/health/ready', {
-        signal: controller.signal,
-        cache: 'no-store',
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) {
-        throw new Error(`Сервер вернул ошибку HTTP ${response.status}.`);
-      }
-
-      const body: unknown = await response.json();
-      if (
-        typeof body !== 'object' ||
-        body === null ||
-        !('status' in body) ||
-        body.status !== 'ok'
-      ) {
-        throw new Error('Ответ сервера не содержит ожидаемый статус «ok».');
-      }
-
-      if (!controller.signal.aborted) {
-        setHealth({ kind: 'success' });
-      }
-    } catch (error) {
-      if (controller.signal.aborted) return;
-
-      const message =
-        error instanceof TypeError
-          ? 'Не удалось получить ответ. Проверьте, запущен ли сервер.'
-          : error instanceof SyntaxError
-            ? 'Сервер вернул некорректный JSON.'
-            : error instanceof Error
-              ? error.message
-              : 'Не удалось проверить сервер.';
-      setHealth({ kind: 'failure', message });
+  const ensureSession = useCallback(() => {
+    if (sessionPromise.current === null) {
+      sessionPromise.current = fetch('/api/session', { cache: 'no-store' })
+        .then((response) => {
+          if (!response.ok) throw new Error('Session request failed');
+        })
+        .catch((error: unknown) => {
+          sessionPromise.current = null;
+          throw error;
+        });
     }
+    return sessionPromise.current;
   }, []);
 
+  const loadHistory = useCallback(async (cursor: string | null) => {
+    const sequence = ++historySequence.current;
+    setHistoryLoading(true);
+    setHistoryError(false);
+    try {
+      await ensureSession();
+      const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
+      const response = await fetch(`/api/history${query}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('History request failed');
+      const page = (await response.json()) as HistoryPage;
+      if (sequence !== historySequence.current) return;
+      setItems((previous) => cursor === null ? page.items : [
+        ...previous,
+        ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
+      ]);
+      setNextCursor(page.nextCursor);
+    } catch {
+      if (sequence === historySequence.current) setHistoryError(true);
+    } finally {
+      if (sequence === historySequence.current) setHistoryLoading(false);
+    }
+  }, [ensureSession]);
+
   useEffect(() => {
-    void checkHealth();
-    return () => activeRequest.current?.abort();
-  }, [checkHealth]);
+    void loadHistory(null);
+  }, [loadHistory]);
+
+  const submit = useCallback(async (request: CalculationRequest) => {
+    const sequence = ++submissionSequence.current;
+    setResult({ kind: 'loading', expression: request.expression });
+    try {
+      await ensureSession();
+      const response = await fetch('/api/calculations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) throw new Error(requestError(response.status));
+      const data = (await response.json()) as CalculationResponse;
+      if (sequence === submissionSequence.current) {
+        setResult({ kind: 'record', record: data.calculation });
+      }
+      void loadHistory(null);
+    } catch (error) {
+      if (sequence === submissionSequence.current) {
+        setResult({
+          kind: 'failed',
+          message: error instanceof Error ? error.message : requestError(0),
+          request,
+        });
+      }
+    }
+  }, [ensureSession, loadHistory]);
+
+  const selectHistory = useCallback((record: CalculationRecord) => {
+    submissionSequence.current++;
+    setExpression(record.expression);
+    setAngleUnit(record.context.angleUnit);
+    setResult({ kind: 'record', record });
+    document.getElementById('expression')?.focus();
+  }, []);
+
+  const outcome = result.kind === 'record' ? result.record.outcome : null;
+  const source = result.kind === 'record' ? result.record.expression : '';
+  const span = outcome?.kind === 'error' ? outcome.error.span : null;
+  const display = outcome?.kind === 'success' ? displayValue(outcome.value) : null;
 
   return (
     <main className="workspace">
       <header>
-        <p className="eyebrow">Среда разработки</p>
+        <p className="eyebrow">Научный калькулятор</p>
         <h1>Супер-дупер калькулятор</h1>
-        <p className="intro">
-          Проверка запуска и доступности сервера.
-        </p>
+        <p className="intro">Введите выражение и нажмите Enter или «Вычислить».</p>
       </header>
 
-      <section className="health" aria-labelledby="health-heading">
-        <div className="section-heading">
-          <h2 id="health-heading">Готовность сервера</h2>
-          <code>GET /health/ready</code>
-        </div>
-        <div className="health-result" role="status" aria-atomic="true">
-          <p className={`status status--${health.kind}`}>
-            <span className="status-dot" aria-hidden="true" />
-            {health.kind === 'loading'
-              ? 'Проверяем соединение'
-              : health.kind === 'success'
-                ? 'Сервер готов'
-                : 'Проверка не прошла'}
-          </p>
-          <p className="status-detail">
-            {health.kind === 'loading'
-              ? 'Ждём ответ на запрос.'
-              : health.kind === 'success'
-                ? 'Сервер отвечает и имеет доступ к базе данных.'
-                : health.message}
-          </p>
-        </div>
-        <button type="button" onClick={() => void checkHealth()}>
-          Проверить снова
-        </button>
-        <p className="hint">
-          Статус обновляется при открытии страницы и вручную.
-        </p>
+      <CalculatorInput
+        expression={expression}
+        angleUnit={angleUnit}
+        onExpressionChange={setExpression}
+        onAngleUnitChange={setAngleUnit}
+        onSubmit={() => void submit({ requestId: crypto.randomUUID(), expression, angleUnit })}
+      >
+
+      <section className="calculation-result" aria-labelledby="result-heading">
+        <h2 id="result-heading">Результат</h2>
+        {result.kind === 'idle' && <p>Здесь появится результат вычисления.</p>}
+        {result.kind === 'loading' && <p role="status">Вычисляем: <code>{result.expression}</code></p>}
+        {result.kind === 'failed' && (
+          <div role="alert">
+            <p>{result.message}</p>
+            <button type="button" onClick={() => void submit(result.request)}>Повторить</button>
+          </div>
+        )}
+        {result.kind === 'record' && (
+          <div role={outcome?.kind === 'error' ? 'alert' : 'status'}>
+            <p className="result-source"><code>{source}</code> · {result.record.context.angleUnit}</p>
+            {outcome?.kind === 'success' ? (
+              <>
+                <p className="result-value">{display?.approximate ? '≈' : '='} {display?.text}</p>
+                {display?.approximate && (
+                  <p className="full-value">Полное значение: <code>{outcome.value}</code></p>
+                )}
+              </>
+            ) : outcome?.kind === 'error' ? (
+              <>
+                <p className="result-error">
+                  {messages.history.mathErrors[outcome.error.code] ?? messages.history.mathErrorUnknown}
+                </p>
+                {span && (
+                  <code className="result-highlight">
+                    {source.slice(0, span.start)}
+                    <mark>{source.slice(span.start, span.end) || '│'}</mark>
+                    {source.slice(span.end)}
+                  </code>
+                )}
+              </>
+            ) : null}
+          </div>
+        )}
       </section>
+      </CalculatorInput>
 
-      <HistoryDemo />
-
-      <nav className="project-links" aria-label="Материалы проекта">
-        <a href="https://github.com/make-no-mistakes-team/super-duper-calculator">
-          Репозиторий
-        </a>
-        <a href="https://github.com/make-no-mistakes-team/super-duper-calculator/blob/main/SPEC_INDEX.md">
-          Спецификации
-        </a>
-      </nav>
+      <History
+        items={items}
+        nextCursor={nextCursor}
+        loading={historyLoading}
+        hasReadError={historyError}
+        language="ru"
+        messages={messages}
+        onLoadMore={() => void loadHistory(nextCursor)}
+        onSelect={selectHistory}
+      />
+      {historyError && !historyLoading && (
+        <button type="button" onClick={() => void loadHistory(null)}>Повторить загрузку истории</button>
+      )}
     </main>
   );
 }

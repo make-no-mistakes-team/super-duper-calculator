@@ -43,16 +43,9 @@ func run() (runErr error) {
 		addr = "127.0.0.1:8080"
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, "{\"status\":\"ok\"}\n")
-	})
-	mux.HandleFunc("GET /health/ready", readiness(db))
-
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           newHandler(db),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	listener, err := net.Listen("tcp", addr)

@@ -1,6 +1,6 @@
 module github.com/make-no-mistakes-team/super-duper-calculator
 
-go 1.27.1
+go 1.26.3
 
 require modernc.org/sqlite v1.58.0
 

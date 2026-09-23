@@ -1,13 +1,14 @@
 # Super Duper Calculator
 
-Go service, React client, and file-backed storage for the Unnecessarily Advanced
-Calculator. The current page checks server readiness.
+Working scientific calculator with a React client, Go calculation API, and
+personal SQLite history. Enter an expression, calculate, and select an old
+record to restore its expression and degree/radian setting.
 
 ## Tools
 
 Use Linux, macOS, or WSL2 with:
 
-- Go **1.27.1**;
+- Go **1.26.3** or newer;
 - Node.js **24.21.0 LTS** and npm **11.19.0** (`.nvmrc` pins Node);
 - GNU Make.
 
@@ -30,10 +31,13 @@ make dev
 modules, and installs locked npm dependencies. It never replaces an existing
 `.env`. `make env` creates only the environment file.
 
-Open **http://127.0.0.1:5173**. The Go server listens on
-**http://127.0.0.1:8080**. `GET /health/ready` queries the database and returns
-`{"status":"ok"}` when it is accessible. `GET /health/live` reports process
-liveness. Vite proxies `/health` and `/api` to Go.
+Open **http://127.0.0.1:5173**. Try `sqrt(81)+2^3`, then press Enter or
+**Вычислить**. Successful results and expression errors appear in personal
+history; selecting a record restores it without calculating again. History is
+kept for the browser's anonymous cookie and survives server restarts.
+
+The Go server listens on **http://127.0.0.1:8080**. Vite proxies `/api` to Go.
+`GET /health/ready` checks the database; `GET /health/live` checks the process.
 
 `make dev` builds and runs the Go binary alongside Vite. Ctrl+C stops both and
 their child processes. Go changes require restarting `make dev`; Vite reloads web
@@ -56,6 +60,8 @@ with `.env.example` when configuration changes.
   ignored by Git. Keep custom database locations out of version control too.
 - Reopening the same file preserves committed data. Connection and durability
   settings are defined in [Application Service](specs/application-service.md#database-configuration).
+- The first startup applies the SQLite schema migration. Later startups reuse
+  the same schema and records.
 
 To start with an empty database, stop the app, choose an unused `DATABASE_PATH`,
 and restart. The previous database is retained. Deleting an old database is a
@@ -79,12 +85,15 @@ make check       # Go build, vet, tests; web typecheck and build
 CI uses the same setup and checks with CGO disabled. Storage checks use isolated
 database files.
 
+After `make build`, run `./bin/calculator` from the repository root to serve the
+built web app and API together at **http://127.0.0.1:8080**.
+
 ## Repository map
 
-- `cmd/calculator/`: HTTP server and health checks.
-- `internal/storage/`: database opening and connection configuration.
+- `cmd/calculator/`: HTTP server, calculation API, history, and health checks.
+- `internal/storage/`: database opening, configuration, and schema migration.
 - `contracts/types.go` and `web/src/contracts.ts`: shared data shapes.
-- `internal/calculation/engine.go`: pure evaluator interface.
+- `internal/calculation/engine.go`: pure expression evaluator.
 - `web/`: React/TypeScript client and Vite configuration.
 - `scripts/` and `Makefile`: local lifecycle and checks.
 - [`examples/`](examples/): static [success](examples/calculation-success.json),

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,6 +13,9 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed migrations/001_core.sql
+var coreMigration string
 
 // Open opens a file-backed SQLite database.
 // An empty path uses data/calculator.sqlite. The caller must close the database
@@ -92,5 +96,33 @@ func Open(ctx context.Context, path string) (_ *sql.DB, err error) {
 	if _, err := db.ExecContext(ctx, "BEGIN IMMEDIATE; ROLLBACK"); err != nil {
 		return nil, fmt.Errorf("check SQLite write access: %w", err)
 	}
+	if err := migrate(ctx, db); err != nil {
+		return nil, fmt.Errorf("migrate SQLite: %w", err)
+	}
 	return db, nil
+}
+
+func migrate(ctx context.Context, db *sql.DB) error {
+	var version int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version == 1 {
+		return nil
+	}
+	if version != 0 {
+		return fmt.Errorf("unsupported schema version %d", version)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, coreMigration); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
