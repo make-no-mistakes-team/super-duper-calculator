@@ -27,5 +27,6 @@ var coreCapabilities = contracts.Capabilities{
 func (a api) capabilities(w http.ResponseWriter, _ *http.Request) {
 	available := coreCapabilities
 	available.Features.Statistics = a.statisticsEnabled
+	available.Features.ReductionPlayback = a.reductionEnabled
 	writeJSON(w, http.StatusOK, available)
 }

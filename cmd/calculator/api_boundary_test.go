@@ -268,7 +268,7 @@ func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 func TestUnknownAPIRoutesRemainJSONWithoutSideEffects(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true)
-	for _, path := range []string{"/api", "/api/missing", "/api/calculations/not-owned/reduction"} {
+	for _, path := range []string{"/api", "/api/missing", "/api/calculations/not-owned/unknown"} {
 		w := apiRequest(handler, nil, http.MethodGet, path, "")
 		failure := decodeBody[contracts.ErrorResponse](t, w, http.StatusNotFound)
 		if failure.Error.Code != "NOT_FOUND" || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") || bytes.Contains(w.Body.Bytes(), []byte("<html")) {

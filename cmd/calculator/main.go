@@ -40,6 +40,13 @@ func run() (runErr error) {
 			return errors.New("invalid STATISTICS_ENABLED")
 		}
 	}
+	reductionEnabled := true
+	if value := os.Getenv("REDUCTION_PLAYBACK_ENABLED"); value != "" {
+		reductionEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return errors.New("invalid REDUCTION_PLAYBACK_ENABLED")
+		}
+	}
 	openCtx, cancelOpen := context.WithTimeout(ctx, 10*time.Second)
 	db, err := storage.Open(openCtx, os.Getenv("DATABASE_PATH"))
 	cancelOpen()
@@ -59,7 +66,7 @@ func run() (runErr error) {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newHandler(db, publicOrigin, statisticsEnabled),
+		Handler:           newHandlerWithPlayback(db, publicOrigin, statisticsEnabled, reductionEnabled),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

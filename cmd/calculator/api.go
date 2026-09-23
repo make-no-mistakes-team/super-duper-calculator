@@ -26,15 +26,21 @@ const (
 
 type api struct {
 	db                *sql.DB
-	engine            calculation.Engine
+	engine            calculation.ReductionEngine
 	publicOrigin      *url.URL
 	statisticsEnabled bool
+	reductionEnabled  bool
 }
 
 var errSessionRequired = errors.New("session required")
 
 func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled bool) http.Handler {
-	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin, statisticsEnabled: statisticsEnabled}
+	return newHandlerWithPlayback(db, publicOrigin, statisticsEnabled, true)
+}
+
+func newHandlerWithPlayback(db *sql.DB, publicOrigin *url.URL, statisticsEnabled, reductionEnabled bool) http.Handler {
+	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin,
+		statisticsEnabled: statisticsEnabled, reductionEnabled: reductionEnabled}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -47,6 +53,7 @@ func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled bool) http.
 	apiMux.HandleFunc("POST /api/calculations", a.calculate)
 	apiMux.HandleFunc("GET /api/history", a.history)
 	apiMux.HandleFunc("GET /api/statistics", a.statistics)
+	apiMux.HandleFunc("GET /api/calculations/{id}/reduction", a.reduction)
 	apiMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		apiError(w, http.StatusNotFound, "NOT_FOUND")
 	})

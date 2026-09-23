@@ -108,6 +108,20 @@ type HistoryPage struct {
 	NextCursor *string             `json:"nextCursor"`
 }
 
+type ReductionStep struct {
+	Before      string     `json:"before"`
+	Span        SourceSpan `json:"span"`
+	Replacement string     `json:"replacement"`
+	After       string     `json:"after"`
+}
+
+type ReductionResponse struct {
+	CalculationID     string          `json:"calculationId"`
+	InitialExpression string          `json:"initialExpression"`
+	Steps             []ReductionStep `json:"steps"`
+	FinalExpression   string          `json:"finalExpression"`
+}
+
 type LongestExpression struct {
 	CalculationID string `json:"calculationId"`
 	Expression    string `json:"expression"`
