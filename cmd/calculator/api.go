@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,18 +24,20 @@ const (
 )
 
 type api struct {
-	db     *sql.DB
-	engine calculation.Engine
+	db           *sql.DB
+	engine       calculation.Engine
+	publicOrigin *url.URL
 }
 
-func newHandler(db *sql.DB) http.Handler {
-	a := api{db: db, engine: calculation.New()}
+func newHandler(db *sql.DB, publicOrigin *url.URL) http.Handler {
+	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /health/ready", readiness(db))
 	mux.HandleFunc("GET /api/session", a.session)
+	mux.HandleFunc("GET /api/capabilities", capabilities)
 	mux.HandleFunc("POST /api/calculations", a.calculate)
 	mux.HandleFunc("GET /api/history", a.history)
 	if _, err := os.Stat("web/dist/index.html"); err == nil {
@@ -83,7 +86,8 @@ func (a api) identity(w http.ResponseWriter, r *http.Request) (string, error) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: id, Path: "/", MaxAge: int(lifetime.Seconds()),
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: r.TLS != nil || (a.publicOrigin != nil && a.publicOrigin.Scheme == "https"),
 	})
 	return id, nil
 }
@@ -96,17 +100,9 @@ func (a api) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"alias": "Гость"})
 }
 
-func sameOrigin(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	u, err := url.Parse(origin)
-	return err == nil && u.Host == r.Host && (u.Scheme == "http" || u.Scheme == "https")
-}
-
 func decodeRequest(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	// Includes JSON escaping of the full 1,024 UTF-16-unit expression.
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
@@ -116,26 +112,49 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, dst any) error {
 }
 
 func (a api) calculate(w http.ResponseWriter, r *http.Request) {
-	if !sameOrigin(r) {
+	if !a.sameOrigin(r) {
 		apiError(w, http.StatusForbidden, "INVALID_ORIGIN")
 		return
 	}
-	var request contracts.CalculationRequest
-	decodeErr := decodeRequest(w, r, &request)
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	// Missing/null fields are malformed requests, unlike an explicitly empty
+	// expression, which is an accepted mathematical syntax error.
+	var input struct {
+		RequestID  *string              `json:"requestId"`
+		Expression *string              `json:"expression"`
+		AngleUnit  *contracts.AngleUnit `json:"angleUnit"`
+		Room       json.RawMessage      `json:"room"`
+	}
+	decodeErr := decodeRequest(w, r, &input)
 	var sizeError *http.MaxBytesError
 	if errors.As(decodeErr, &sizeError) {
 		apiError(w, http.StatusRequestEntityTooLarge, "REQUEST_LIMIT")
 		return
 	}
 	if !errors.Is(decodeErr, io.EOF) ||
-		request.RequestID == "" || len(request.RequestID) > 128 ||
-		(request.AngleUnit != contracts.Degrees && request.AngleUnit != contracts.Radians) || request.Room != nil {
+		input.RequestID == nil || input.Expression == nil || input.AngleUnit == nil ||
+		*input.RequestID == "" || len(*input.RequestID) > 128 ||
+		(*input.AngleUnit != contracts.Degrees && *input.AngleUnit != contracts.Radians) || input.Room != nil {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
+	request := contracts.CalculationRequest{RequestID: *input.RequestID, Expression: *input.Expression, AngleUnit: *input.AngleUnit}
 
 	owner, err := a.identity(w, r)
 	if err != nil {
+		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+		return
+	}
+	previous, err := a.recordByAction(r, owner, request.RequestID)
+	switch {
+	case err == nil:
+		writeCalculation(w, previous, request)
+		return
+	case !errors.Is(err, sql.ErrNoRows):
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 		return
 	}
@@ -184,17 +203,25 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if inserted == 0 {
-		record, err = readRecord(a.db.QueryRowContext(r.Context(), `
-			SELECT id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at
-			FROM calculations WHERE session_id = ? AND request_id = ?`, owner, request.RequestID), nil)
+		record, err = a.recordByAction(r, owner, request.RequestID)
 		if err != nil {
 			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 			return
 		}
-		if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit {
-			apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
-			return
-		}
+	}
+	writeCalculation(w, record, request)
+}
+
+func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts.CalculationRecord, error) {
+	return readRecord(a.db.QueryRowContext(r.Context(), `
+		SELECT id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at
+		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID), nil)
+}
+
+func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest) {
+	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit {
+		apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
+		return
 	}
 	writeJSON(w, http.StatusOK, contracts.CalculationResponse{
 		Calculation: record, Publication: contracts.Publication{Status: "private"},

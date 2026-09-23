@@ -10,6 +10,37 @@ const (
 	Radians AngleUnit = "rad"
 )
 
+type CapabilityLimits struct {
+	ExpressionLength int `json:"expressionLength"`
+	Tokens           int `json:"tokens"`
+	Nesting          int `json:"nesting"`
+}
+
+type CapabilityFeatures struct {
+	Factorial              bool `json:"factorial"`
+	Percentage             bool `json:"percentage"`
+	Remainder              bool `json:"remainder"`
+	Statistics             bool `json:"statistics"`
+	Achievements           bool `json:"achievements"`
+	Themes                 bool `json:"themes"`
+	MinimalPresentation    bool `json:"minimalPresentation"`
+	Localization           bool `json:"localization"`
+	ReductionPlayback      bool `json:"reductionPlayback"`
+	Rooms                  bool `json:"rooms"`
+	RoomReactions          bool `json:"roomReactions"`
+	RoomPublicationControl bool `json:"roomPublicationControl"`
+}
+
+type Capabilities struct {
+	SemanticsVersion string             `json:"semanticsVersion"`
+	Operators        []string           `json:"operators"`
+	Functions        map[string][]int   `json:"functions"`
+	AngleUnits       []AngleUnit        `json:"angleUnits"`
+	DefaultAngleUnit AngleUnit          `json:"defaultAngleUnit"`
+	Limits           CapabilityLimits   `json:"limits"`
+	Features         CapabilityFeatures `json:"features"`
+}
+
 type SourceSpan struct {
 	Start int `json:"start"`
 	End   int `json:"end"`

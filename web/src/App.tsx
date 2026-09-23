@@ -6,11 +6,18 @@ import { getMessages } from './i18n';
 
 type ResultState =
   | { kind: 'idle' }
-  | { kind: 'loading'; expression: string }
+  | { kind: 'loading'; request: CalculationRequest }
   | { kind: 'record'; record: CalculationRecord }
-  | { kind: 'failed'; message: string; request: CalculationRequest };
+  | { kind: 'failed'; message: string; retryable: boolean; request: CalculationRequest };
 
 const messages = getMessages('ru');
+const networkError = 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
+
+class RequestStatusError extends Error {
+  constructor(readonly status: number) {
+    super('HTTP request failed');
+  }
+}
 
 function displayValue(value: string) {
   const number = Number(value);
@@ -18,11 +25,26 @@ function displayValue(value: string) {
   return { text, approximate: Number(text) !== number };
 }
 
-function requestError(status: number): string {
-  if (status === 413) return 'Выражение слишком длинное.';
-  if (status === 400) return 'Некорректный запрос. Проверьте выражение и настройки.';
-  if (status === 409) return 'Действие уже использовано для другого выражения.';
-  return 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
+function requestError(status: number): { message: string; retryable: boolean } {
+  if (status === 413) {
+    return {
+      message: 'Превышены ограничения запроса: длина выражения, число токенов или глубина вложенности.',
+      retryable: false,
+    };
+  }
+  if (status === 400) {
+    return { message: 'Некорректный запрос. Проверьте выражение и настройки.', retryable: false };
+  }
+  if (status === 409) {
+    return { message: 'Действие уже использовано для другого выражения.', retryable: false };
+  }
+  if (status === 408 || status === 429) {
+    return { message: 'Запрос временно отклонён. Повторите попытку позже.', retryable: true };
+  }
+  if (status >= 400 && status < 500) {
+    return { message: 'Сервер отклонил запрос. Проверьте его и отправьте заново.', retryable: false };
+  }
+  return { message: networkError, retryable: true };
 }
 
 export default function App() {
@@ -36,12 +58,13 @@ export default function App() {
   const submissionSequence = useRef(0);
   const historySequence = useRef(0);
   const sessionPromise = useRef<Promise<void> | null>(null);
+  const mounted = useRef(false);
 
   const ensureSession = useCallback(() => {
     if (sessionPromise.current === null) {
       sessionPromise.current = fetch('/api/session', { cache: 'no-store' })
         .then((response) => {
-          if (!response.ok) throw new Error('Session request failed');
+          if (!response.ok) throw new RequestStatusError(response.status);
         })
         .catch((error: unknown) => {
           sessionPromise.current = null;
@@ -57,48 +80,63 @@ export default function App() {
     setHistoryError(false);
     try {
       await ensureSession();
+      if (!mounted.current || sequence !== historySequence.current) return;
       const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
       const response = await fetch(`/api/history${query}`, { cache: 'no-store' });
+      if (!mounted.current || sequence !== historySequence.current) return;
       if (!response.ok) throw new Error('History request failed');
       const page = (await response.json()) as HistoryPage;
-      if (sequence !== historySequence.current) return;
+      if (!mounted.current || sequence !== historySequence.current) return;
       setItems((previous) => cursor === null ? page.items : [
         ...previous,
         ...page.items.filter((item) => !previous.some((old) => old.id === item.id)),
       ]);
       setNextCursor(page.nextCursor);
     } catch {
-      if (sequence === historySequence.current) setHistoryError(true);
+      if (mounted.current && sequence === historySequence.current) setHistoryError(true);
     } finally {
-      if (sequence === historySequence.current) setHistoryLoading(false);
+      if (mounted.current && sequence === historySequence.current) setHistoryLoading(false);
     }
   }, [ensureSession]);
 
   useEffect(() => {
+    mounted.current = true;
     void loadHistory(null);
+    return () => {
+      mounted.current = false;
+      historySequence.current++;
+      submissionSequence.current++;
+    };
   }, [loadHistory]);
 
   const submit = useCallback(async (request: CalculationRequest) => {
     const sequence = ++submissionSequence.current;
-    setResult({ kind: 'loading', expression: request.expression });
+    setResult({ kind: 'loading', request });
     try {
       await ensureSession();
+      if (!mounted.current) return;
       const response = await fetch('/api/calculations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
       });
-      if (!response.ok) throw new Error(requestError(response.status));
+      if (!mounted.current) return;
+      if (!response.ok) throw new RequestStatusError(response.status);
       const data = (await response.json()) as CalculationResponse;
-      if (sequence === submissionSequence.current) {
+      if (mounted.current && sequence === submissionSequence.current) {
         setResult({ kind: 'record', record: data.calculation });
       }
-      void loadHistory(null);
+      if (mounted.current) void loadHistory(null);
     } catch (error) {
-      if (sequence === submissionSequence.current) {
+      if (mounted.current && sequence === submissionSequence.current) {
+        const failure = error instanceof RequestStatusError
+          ? requestError(error.status)
+          : error instanceof SyntaxError
+            ? { message: 'Не удалось прочитать ответ сервера. Повторите попытку.', retryable: true }
+            : { message: networkError, retryable: true };
         setResult({
           kind: 'failed',
-          message: error instanceof Error ? error.message : requestError(0),
+          ...failure,
           request,
         });
       }
@@ -106,10 +144,8 @@ export default function App() {
   }, [ensureSession, loadHistory]);
 
   const selectHistory = useCallback((record: CalculationRecord) => {
-    submissionSequence.current++;
     setExpression(record.expression);
     setAngleUnit(record.context.angleUnit);
-    setResult({ kind: 'record', record });
     document.getElementById('expression')?.focus();
   }, []);
 
@@ -137,16 +173,27 @@ export default function App() {
       <section className="calculation-result" aria-labelledby="result-heading">
         <h2 id="result-heading">Результат</h2>
         {result.kind === 'idle' && <p>Здесь появится результат вычисления.</p>}
-        {result.kind === 'loading' && <p role="status">Вычисляем: <code>{result.expression}</code></p>}
+        {result.kind === 'loading' && (
+          <p className="result-source" role="status">
+            Вычисляем: <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
+          </p>
+        )}
         {result.kind === 'failed' && (
           <div role="alert">
+            <p className="result-source">
+              <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
+            </p>
             <p>{result.message}</p>
-            <button type="button" onClick={() => void submit(result.request)}>Повторить</button>
+            {result.retryable && (
+              <button type="button" onClick={() => void submit(result.request)}>Повторить</button>
+            )}
           </div>
         )}
         {result.kind === 'record' && (
           <div role={outcome?.kind === 'error' ? 'alert' : 'status'}>
-            <p className="result-source"><code>{source}</code> · {result.record.context.angleUnit}</p>
+            <p className="result-source">
+              <code>{source}</code> · {messages.history.angleUnitLabel[result.record.context.angleUnit]}
+            </p>
             {outcome?.kind === 'success' ? (
               <>
                 <p className="result-value">{display?.approximate ? '≈' : '='} {display?.text}</p>

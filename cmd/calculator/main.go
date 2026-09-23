@@ -28,6 +28,10 @@ func run() (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	publicOrigin, err := parsePublicOrigin(os.Getenv("PUBLIC_ORIGIN"))
+	if err != nil {
+		return err
+	}
 	db, err := storage.Open(ctx, os.Getenv("DATABASE_PATH"))
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -45,7 +49,7 @@ func run() (runErr error) {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newHandler(db),
+		Handler:           newHandler(db, publicOrigin),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	listener, err := net.Listen("tcp", addr)

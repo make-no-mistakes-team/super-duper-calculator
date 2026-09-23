@@ -1,14 +1,13 @@
 # Super Duper Calculator
 
-Working scientific calculator with a React client, Go calculation API, and
-personal SQLite history. Enter an expression, calculate, and select an old
-record to restore its expression and degree/radian setting.
+Go service, React client, and file-backed storage for the Unnecessarily Advanced
+Calculator.
 
 ## Tools
 
 Use Linux, macOS, or WSL2 with:
 
-- Go **1.26.3** or newer;
+- Go **1.27.1**;
 - Node.js **24.21.0 LTS** and npm **11.19.0** (`.nvmrc` pins Node);
 - GNU Make.
 
@@ -31,13 +30,10 @@ make dev
 modules, and installs locked npm dependencies. It never replaces an existing
 `.env`. `make env` creates only the environment file.
 
-Open **http://127.0.0.1:5173**. Try `sqrt(81)+2^3`, then press Enter or
-**Вычислить**. Successful results and expression errors appear in personal
-history; selecting a record restores it without calculating again. History is
-kept for the browser's anonymous cookie and survives server restarts.
-
-The Go server listens on **http://127.0.0.1:8080**. Vite proxies `/api` to Go.
-`GET /health/ready` checks the database; `GET /health/live` checks the process.
+Open **http://127.0.0.1:5173**. The Go server listens on
+**http://127.0.0.1:8080**. `GET /health/ready` queries the database and returns
+`{"status":"ok"}` when it is accessible. `GET /health/live` reports process
+liveness. Vite proxies `/health` and `/api` to Go.
 
 `make dev` builds and runs the Go binary alongside Vite. Ctrl+C stops both and
 their child processes. Go changes require restarting `make dev`; Vite reloads web
@@ -52,6 +48,9 @@ with `.env.example` when configuration changes.
 
 - `HTTP_ADDR` defaults to `127.0.0.1:8080`. Update `API_PROXY_TARGET` too if the
   server moves; its default is `http://127.0.0.1:8080`.
+- Set `PUBLIC_ORIGIN` to the browser-facing HTTPS origin when using a reverse
+  proxy, without a path or trailing slash. This enables Secure session cookies
+  and validates mutation origins. Leave it unset for local HTTP development.
 - `DATABASE_PATH` defaults to `data/calculator.sqlite`. Relative paths resolve
   from the Go process's working directory; `make` starts it at the repository
   root. Use an absolute path on permanent local storage when deploying.
@@ -60,8 +59,6 @@ with `.env.example` when configuration changes.
   ignored by Git. Keep custom database locations out of version control too.
 - Reopening the same file preserves committed data. Connection and durability
   settings are defined in [Application Service](specs/application-service.md#database-configuration).
-- The first startup applies the SQLite schema migration. Later startups reuse
-  the same schema and records.
 
 To start with an empty database, stop the app, choose an unused `DATABASE_PATH`,
 and restart. The previous database is retained. Deleting an old database is a
@@ -85,15 +82,16 @@ make check       # Go build, vet, tests; web typecheck and build
 CI uses the same setup and checks with CGO disabled. Storage checks use isolated
 database files.
 
-After `make build`, run `./bin/calculator` from the repository root to serve the
-built web app and API together at **http://127.0.0.1:8080**.
+After `make build`, run `./bin/calculator` from the repository root to serve
+`web/dist` and the API together. The binary uses `HTTP_ADDR` and does not load
+`.env`; export any required configuration before starting it.
 
 ## Repository map
 
-- `cmd/calculator/`: HTTP server, calculation API, history, and health checks.
-- `internal/storage/`: database opening, configuration, and schema migration.
+- `cmd/calculator/`: HTTP server and health checks.
+- `internal/storage/`: database opening and connection configuration.
 - `contracts/types.go` and `web/src/contracts.ts`: shared data shapes.
-- `internal/calculation/engine.go`: pure expression evaluator.
+- `internal/calculation/engine.go`: pure evaluator interface.
 - `web/`: React/TypeScript client and Vite configuration.
 - `scripts/` and `Makefile`: local lifecycle and checks.
 - [`examples/`](examples/): static [success](examples/calculation-success.json),

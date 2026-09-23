@@ -314,7 +314,7 @@ a:focus-visible {
 .calculator-expression {
   display: block;
   width: 100%;
-  min-height: 52px;
+  min-height: 6.5rem;
   margin-top: 8px;
   padding: 10px 14px;
   border: 1px solid #9eafa5;
@@ -323,6 +323,8 @@ a:focus-visible {
   color: #1b2927;
   font: inherit;
   font-size: 1.25rem;
+  line-height: 1.4;
+  resize: vertical;
 }
 
 .calculator-settings {
@@ -372,6 +374,10 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.result-source code {
+  white-space: pre-wrap;
+}
+
 .result-value {
   margin: 12px 0 0;
   color: #1b6652;
@@ -408,6 +414,7 @@ a:focus-visible {
 }
 
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible {
   outline: 3px solid #1b6652;
   outline-offset: 4px;

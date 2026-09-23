@@ -20,13 +20,16 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	handler := newHandler(db)
+	handler := newHandler(db, nil)
 
 	type browser struct{ cookie *http.Cookie }
 	personA, personB := &browser{}, &browser{}
 	send := func(person *browser, method, path string, body []byte) *httptest.ResponseRecorder {
 		t.Helper()
 		request := httptest.NewRequest(method, path, bytes.NewReader(body)).WithContext(t.Context())
+		if method == http.MethodPost {
+			request.Header.Set("Content-Type", "application/json")
+		}
 		if person.cookie != nil {
 			request.AddCookie(person.cookie)
 		}
@@ -80,6 +83,9 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	if status, _ := post(personA, "action-1", "9"); status != http.StatusConflict {
 		t.Fatalf("changed retry status = %d", status)
 	}
+	if status, _ := post(personA, "action-1", strings.Repeat("1", 1025)); status != http.StatusConflict {
+		t.Fatalf("changed oversized retry status = %d, want 409", status)
+	}
 	if status, result := post(personA, "action-2", "5*("); status != 200 || result.Calculation.Outcome.Error == nil || result.Calculation.Outcome.Error.Code != "SYNTAX_ERROR" {
 		t.Fatalf("math error = %d %+v", status, result)
 	}
@@ -111,8 +117,82 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler = newHandler(db)
+	handler = newHandler(db, nil)
 	if history := page(personA, ""); len(history.Items) != 2 {
 		t.Fatalf("history after restart = %+v", history)
+	}
+}
+
+func TestRejectCrossSchemeOrigin(t *testing.T) {
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "origin.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	request := httptest.NewRequest(http.MethodPost, "http://calculator.example/api/calculations",
+		strings.NewReader(`{"requestId":"cross-scheme","expression":"1+1","angleUnit":"deg"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://calculator.example")
+	response := httptest.NewRecorder()
+	newHandler(db, nil).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("cross-scheme origin status = %d, want 403", response.Code)
+	}
+}
+
+func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "requests.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	handler := newHandler(db, nil)
+	for _, body := range []string{
+		`{"requestId":"missing","angleUnit":"deg"}`,
+		`{"requestId":"null","expression":null,"angleUnit":"deg"}`,
+		`{"requestId":"number","expression":123,"angleUnit":"deg"}`,
+		`{"requestId":"room","expression":"1","angleUnit":"deg","room":null}`,
+		`{"requestId":"extra","expression":"1","angleUnit":"deg"} {}`,
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", body, response.Code)
+		}
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/calculations",
+		strings.NewReader(`{"requestId":"plain","expression":"1+1","angleUnit":"deg"}`))
+	request.Header.Set("Content-Type", "text/plain")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("simple cross-origin form-compatible content type accepted: %d", response.Code)
+	}
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM calculations").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("malformed requests created history: count %d, err %v", count, err)
+	}
+}
+
+func TestEscapedExpressionWithinBudget(t *testing.T) {
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "escaped.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	body := `{"requestId":"escaped","expression":"` + strings.Repeat(`\u0020`, 1023) + `1","angleUnit":"deg"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	newHandler(db, nil).ServeHTTP(response, request)
+	var result contracts.CalculationResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || result.Calculation.Outcome.Value != "1" ||
+		result.Calculation.Expression != strings.Repeat(" ", 1023)+"1" {
+		t.Fatalf("valid escaped expression rejected or altered: status %d, outcome %+v", response.Code, result.Calculation.Outcome)
 	}
 }

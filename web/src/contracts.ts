@@ -1,5 +1,32 @@
 export type AngleUnit = 'deg' | 'rad';
 
+export type Capabilities = {
+  semanticsVersion: string;
+  operators: string[];
+  functions: Record<string, number[]>;
+  angleUnits: AngleUnit[];
+  defaultAngleUnit: AngleUnit;
+  limits: {
+    expressionLength: number;
+    tokens: number;
+    nesting: number;
+  };
+  features: {
+    factorial: boolean;
+    percentage: boolean;
+    remainder: boolean;
+    statistics: boolean;
+    achievements: boolean;
+    themes: boolean;
+    minimalPresentation: boolean;
+    localization: boolean;
+    reductionPlayback: boolean;
+    rooms: boolean;
+    roomReactions: boolean;
+    roomPublicationControl: boolean;
+  };
+};
+
 export type SourceSpan = {
   start: number;
   end: number;

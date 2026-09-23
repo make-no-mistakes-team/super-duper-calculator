@@ -38,7 +38,7 @@ export function CalculatorInput({
   onSubmit,
   children,
 }: CalculatorInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   function focusAt(position: number) {
     requestAnimationFrame(() => {
@@ -76,19 +76,19 @@ export function CalculatorInput({
       <label className="calculator-input-label" htmlFor="expression">
         Введите выражение или используйте кнопки
       </label>
-      <input
+      <textarea
         ref={inputRef}
         id="expression"
         className="calculator-expression"
-        type="text"
+        rows={3}
         inputMode="text"
-        autoComplete="off"
         spellCheck={false}
         maxLength={1024}
         value={expression}
         onChange={(event) => onExpressionChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && onSubmit) {
+          if (event.key === 'Enter' && !event.shiftKey
+            && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && onSubmit) {
             event.preventDefault();
             onSubmit();
           }
