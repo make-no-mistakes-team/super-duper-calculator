@@ -212,11 +212,12 @@ type Expr func() (float64, *contracts.MathError)
 
 // operator describes one entry of the operators table.
 type operator struct {
-	prec  int  // higher binds stronger
-	right bool // right-associative
-	arity int  // 0: constant, 1: prefix, 2: infix or a two-argument function
-	fn    bool // named function: prefix, counted in facts.Functions
-	apply func(x []float64, unit contracts.AngleUnit) (float64, *contracts.MathError)
+	prec    int  // higher binds stronger
+	right   bool // right-associative
+	arity   int  // 0: constant, 1: prefix/postfix, 2: infix or a two-argument function
+	fn      bool // named function: prefix, counted in facts.Functions
+	postfix bool // postfix operator: applies immediately to the preceding primary
+	apply   func(x []float64, unit contracts.AngleUnit) (float64, *contracts.MathError)
 }
 
 // reduceDegrees splits x degrees into quarter turns n (0..3) and a remainder
@@ -228,9 +229,12 @@ var reduceDegrees = func(x float64) (float64, int) {
 	return (r - 90*n) * math.Pi / 180, int(n) & 3 // -90 is the same as 270
 }
 
-// disabled are the optional extensions from specs/calculation-engine.md that
-// are known but not enabled: UNSUPPORTED_FEATURE, not a syntax error.
-var disabled = map[string]string{"!": "factorial", "%": "percentage", "mod": "remainder"}
+func remainder(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
+	if x[1] == 0 {
+		return 0, &contracts.MathError{Code: "DIVISION_BY_ZERO", Stage: "evaluate", Params: map[string]any{}}
+	}
+	return math.Mod(x[0], x[1]), nil
+}
 
 // operators is everything parse knows besides numbers and parentheses; the
 // language is extended by adding entries. Prefix signs are
@@ -238,6 +242,7 @@ var disabled = map[string]string{"!": "factorial", "%": "percentage", "mod": "re
 // sign, so parentheses around arguments are optional: sin 3^2 is sin(9).
 // A comma gives the nearest function a second argument and switches it to
 // the name+"," entry: log 8 is log10(8), log 8, 2 and log(8, 2) are log2(8).
+// mod alone requires both parentheses and exactly two arguments.
 var operators = map[string]operator{
 	"+": {prec: 1, arity: 2, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) { return x[0] + x[1], nil }},
 	"-": {prec: 1, arity: 2, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) { return x[0] - x[1], nil }},
@@ -255,6 +260,23 @@ var operators = map[string]operator{
 			return 0, &contracts.MathError{Code: "DIVISION_BY_ZERO", Stage: "evaluate", Params: map[string]any{}}
 		}
 		return math.Pow(x[0], x[1]), nil // (-8)^(1/3) is NaN -> DOMAIN_ERROR
+	}},
+	"!": {prec: 5, arity: 1, postfix: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
+		n := x[0]
+		if n < 0 || math.Trunc(n) != n {
+			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+		}
+		if n > 170 {
+			return 0, &contracts.MathError{Code: "NUMERIC_OVERFLOW", Stage: "evaluate", Params: map[string]any{}}
+		}
+		result := 1.0
+		for i := 2; i <= int(n); i++ {
+			result *= float64(i)
+		}
+		return result, nil
+	}},
+	"%": {prec: 5, arity: 1, postfix: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
+		return x[0] / 100, nil
 	}},
 
 	// Constants do not depend on the angle unit.
@@ -284,6 +306,8 @@ var operators = map[string]operator{
 		}
 		return math.Log(x[0]) / math.Log(x[1]), nil
 	}},
+	"mod":  {prec: 3, arity: 2, fn: true, apply: remainder},
+	"mod,": {prec: 3, arity: 2, fn: true, apply: remainder},
 	"sin": {prec: 3, arity: 1, fn: true, apply: func(x []float64, unit contracts.AngleUnit) (float64, *contracts.MathError) {
 		if unit == contracts.Degrees {
 			y, n := reduceDegrees(x[0])
@@ -373,7 +397,7 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		case o.fn:
 			facts.Functions[strings.TrimSuffix(p.key, ",")]++
 			facts.OperationCount++
-		case o.arity == 2: // a unary sign is part of a signed number, not an operation
+		case o.postfix, o.arity == 2: // a unary sign is part of a signed number, not an operation
 			facts.Operators[p.key]++
 			facts.OperationCount++
 		}
@@ -385,7 +409,11 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 
 		span := contracts.SourceSpan{Start: starts[p.at], End: starts[p.at] + len(tokens[p.at])} // constant
 		if len(args) > 0 {
-			span.End = args[len(args)-1].span.End
+			if o.postfix {
+				span.Start = args[0].span.Start
+			} else {
+				span.End = args[len(args)-1].span.End
+			}
 			if !o.fn && o.arity == 2 { // infix: starts at the left operand
 				span.Start = args[0].span.Start
 			}
@@ -420,9 +448,6 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 
 	for k, t := range tokens {
 		at := contracts.SourceSpan{Start: starts[k], End: starts[k] + len(t)}
-		if feature, ok := disabled[t]; ok { // 5!, 10%, mod(7, 3)
-			return nil, fail("UNSUPPORTED_FEATURE", at, map[string]any{"feature": feature})
-		}
 		switch c := t[0]; {
 		case t == "(":
 			if !expectOperand { // 2(3), (1)(2)
@@ -436,6 +461,10 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 
 		case t == ")":
 			if expectOperand { // (), 2+)
+				if len(ops) >= 2 && ops[len(ops)-1].key == "(" &&
+					(ops[len(ops)-2].key == "mod" || ops[len(ops)-2].key == "mod,") {
+					return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+				}
 				return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
 			}
 			for len(ops) > 0 && ops[len(ops)-1].key != "(" {
@@ -446,12 +475,36 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			if len(ops) == 0 {
 				return nil, fail("SYNTAX_ERROR", at, map[string]any{"unexpected": t})
 			}
+			if len(ops) >= 2 && ops[len(ops)-2].key == "mod" {
+				return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+			}
 			operands[len(operands)-1].span = contracts.SourceSpan{Start: starts[ops[len(ops)-1].at], End: at.End}
 			ops = ops[:len(ops)-1]
 			depth--
+			// Complete a function call before an enclosing call consumes its
+			// comma or a following operator acts on the result. A prefix log
+			// may still take its base after a parenthesized operand:
+			// log (log 100), 2.
+			if len(ops) > 0 && operators[ops[len(ops)-1].key].fn {
+				continuesPrefixLog := ops[len(ops)-1].key == "log" && k+1 < len(tokens) && tokens[k+1] == ","
+				for i := len(ops) - 2; continuesPrefixLog && i >= 0; i-- {
+					if ops[i].key == "(" {
+						continuesPrefixLog = i == 0 || !operators[ops[i-1].key].fn
+						break
+					}
+				}
+				if !continuesPrefixLog {
+					if merr := reduce(); merr != nil {
+						return nil, merr
+					}
+				}
+			}
 
 		case t == ",":
 			if expectOperand { // log(, 2), log 8,,2
+				if len(ops) >= 2 && ops[len(ops)-1].key == "(" && ops[len(ops)-2].key == "mod" {
+					return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+				}
 				return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
 			}
 			// The comma belongs to the nearest function that takes another
@@ -496,6 +549,18 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			ops[f].key += ","
 			expectOperand = true
 
+		case t == "!" || t == "%":
+			if expectOperand {
+				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operand"})
+			}
+			if k > 0 && (tokens[k-1] == "!" || tokens[k-1] == "%") {
+				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
+			}
+			ops = append(ops, pending{key: t, at: k})
+			if merr := reduce(); merr != nil {
+				return nil, merr
+			}
+
 		case c >= '0' && c <= '9', c == '.':
 			if !expectOperand { // 1 2
 				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
@@ -530,6 +595,13 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 				key = t
 			}
 			if o, ok := operators[key]; ok && (o.fn || o.arity < 2) {
+				if t == "mod" && (k+1 == len(tokens) || tokens[k+1] != "(") {
+					if k+1 == len(tokens) {
+						return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.End, End: at.End}, map[string]any{"expected": "("})
+					}
+					next := contracts.SourceSpan{Start: starts[k+1], End: starts[k+1] + len(tokens[k+1])}
+					return nil, fail("SYNTAX_ERROR", next, map[string]any{"expected": "("})
+				}
 				ops = append(ops, pending{key: key, at: k}) // prefix: pushed without popping anything
 				if o.arity == 0 {                           // a constant is an operand at once
 					if merr := reduce(); merr != nil {

@@ -441,26 +441,223 @@ func TestScientificErrorSpans(t *testing.T) {
 	}
 }
 
-// Known optional extensions that are not enabled are not syntax errors.
-func TestUnsupportedFeatures(t *testing.T) {
+func TestFactorialSuccess(t *testing.T) {
+	for _, tc := range []struct{ expression, value string }{
+		{"0!", "1"},
+		{"5!", "120"},
+		{"3.0!", "6"},
+		{"(2+3)!", "120"},
+		{"(3!)!", "720"},
+		{"2^3!", "64"},
+		{"3!^2", "36"},
+		{"(2^3)!", "40320"},
+		{"-3!", "-6"},
+		{"-0!", "-1"},
+		{"(-0)!", "1"},
+		{"sqrt(9)!", "6"},
+	} {
+		if ev := evaluate(t, tc.expression); ev.Outcome.Kind != "success" || ev.Outcome.Value != tc.value {
+			t.Errorf("%q = %+v, want %s", tc.expression, ev.Outcome, tc.value)
+		}
+	}
+	ev := evaluate(t, "170!")
+	v, err := strconv.ParseFloat(ev.Outcome.Value, 64)
+	if ev.Outcome.Kind != "success" || err != nil || math.IsInf(v, 0) || v < 1e306 {
+		t.Errorf("170! = %+v, want finite boundary value", ev.Outcome)
+	}
+}
+
+func TestFactorialErrorsAndFacts(t *testing.T) {
 	for _, tc := range []struct {
-		expression, feature string
-		span                contracts.SourceSpan
+		expression, code, stage string
+		span                    contracts.SourceSpan
 	}{
-		{"5!", "factorial", contracts.SourceSpan{Start: 1, End: 2}},
-		{"(3!)!", "factorial", contracts.SourceSpan{Start: 2, End: 3}},
-		{"10%", "percentage", contracts.SourceSpan{Start: 2, End: 3}},
-		{"200*(1+10%)", "percentage", contracts.SourceSpan{Start: 9, End: 10}},
-		{"mod(7,3)", "remainder", contracts.SourceSpan{Start: 0, End: 3}},
-		{"1 + mod(-7, 3)", "remainder", contracts.SourceSpan{Start: 4, End: 7}},
+		{"(-3)!", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 5}},
+		{"5.5!", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 4}},
+		{"170.5!", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 6}},
+		{"171!", "NUMERIC_OVERFLOW", "evaluate", contracts.SourceSpan{Start: 0, End: 4}},
+		{"(170+1)!", "NUMERIC_OVERFLOW", "evaluate", contracts.SourceSpan{Start: 0, End: 8}},
+		{"!3", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 0, End: 1}},
+		{"3!!", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 2, End: 3}},
+		{"3! !", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 3, End: 4}},
+		{"3!2", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 2, End: 3}},
 	} {
 		ev := evaluate(t, tc.expression)
 		e := ev.Outcome.Error
-		if e == nil || e.Code != "UNSUPPORTED_FEATURE" || e.Stage != "parse" || e.Params["feature"] != tc.feature || e.Span == nil || *e.Span != tc.span {
-			t.Errorf("%q = %+v, want UNSUPPORTED_FEATURE/parse %s span %v", tc.expression, e, tc.feature, tc.span)
+		if e == nil || e.Code != tc.code || e.Stage != tc.stage || e.Span == nil || *e.Span != tc.span {
+			t.Errorf("%q = %+v, want %s/%s at %v", tc.expression, e, tc.code, tc.stage, tc.span)
 		}
-		if ev.Facts != nil {
-			t.Errorf("%q facts = %+v, want none", tc.expression, *ev.Facts)
+		if tc.stage == "parse" && ev.Facts != nil {
+			t.Errorf("%q parse failure supplied facts %+v", tc.expression, ev.Facts)
+		}
+	}
+
+	for _, tc := range []struct {
+		expression string
+		facts      contracts.CalculationFacts
+	}{
+		{"2^3!", contracts.CalculationFacts{Operators: map[string]int{"!": 1, "^": 1}, Functions: map[string]int{}, OperationCount: 2}},
+		{"(3!)!", contracts.CalculationFacts{Operators: map[string]int{"!": 2}, Functions: map[string]int{}, OperationCount: 2, Depth: 1}},
+		{"sqrt(9)!", contracts.CalculationFacts{Operators: map[string]int{"!": 1}, Functions: map[string]int{"sqrt": 1}, OperationCount: 2, Depth: 1}},
+		{"(-3)!", contracts.CalculationFacts{Operators: map[string]int{"!": 1}, Functions: map[string]int{}, OperationCount: 1, Depth: 1}},
+	} {
+		ev := evaluate(t, tc.expression)
+		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
+		}
+	}
+}
+
+func TestPercentageSuccess(t *testing.T) {
+	for _, tc := range []struct{ expression, value string }{
+		{"10%", "0.1"},
+		{"200+10%", "200.1"},
+		{"200*(1+10%)", "220.00000000000003"},
+		{"2^100%", "2"},
+		{"-50%^2", "-0.25"},
+		{"(-50)%^2", "0.25"},
+		{"(50%)%", "0.005"},
+		{"0%", "0"},
+		{"(-0)%", "0"},
+		{"(-50)%", "-0.5"},
+		{"sqrt(25)%", "0.05"},
+		{"1e-323%", "0"}, // binary64 underflow may round to zero
+	} {
+		if ev := evaluate(t, tc.expression); ev.Outcome.Kind != "success" || ev.Outcome.Value != tc.value {
+			t.Errorf("%q = %+v, want %s", tc.expression, ev.Outcome, tc.value)
+		}
+	}
+}
+
+func TestPercentageErrorsAndFacts(t *testing.T) {
+	for _, tc := range []struct {
+		expression string
+		span       contracts.SourceSpan
+	}{
+		{"%5", contracts.SourceSpan{Start: 0, End: 1}},
+		{"50%%", contracts.SourceSpan{Start: 3, End: 4}},
+		{"50%! ", contracts.SourceSpan{Start: 3, End: 4}},
+		{"2!%", contracts.SourceSpan{Start: 2, End: 3}},
+		{"50%2", contracts.SourceSpan{Start: 3, End: 4}},
+	} {
+		ev := evaluate(t, tc.expression)
+		e := ev.Outcome.Error
+		if e == nil || e.Code != "SYNTAX_ERROR" || e.Stage != "parse" || e.Span == nil || *e.Span != tc.span || ev.Facts != nil {
+			t.Errorf("%q = %+v facts %+v, want SYNTAX_ERROR/parse at %v without facts", tc.expression, e, ev.Facts, tc.span)
+		}
+	}
+
+	for _, tc := range []struct {
+		expression string
+		facts      contracts.CalculationFacts
+	}{
+		{"200+10%", contracts.CalculationFacts{Operators: map[string]int{"+": 1, "%": 1}, Functions: map[string]int{}, OperationCount: 2}},
+		{"(50%)%", contracts.CalculationFacts{Operators: map[string]int{"%": 2}, Functions: map[string]int{}, OperationCount: 2, Depth: 1}},
+		{"sqrt(25)%", contracts.CalculationFacts{Operators: map[string]int{"%": 1}, Functions: map[string]int{"sqrt": 1}, OperationCount: 2, Depth: 1}},
+	} {
+		ev := evaluate(t, tc.expression)
+		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
+		}
+	}
+}
+
+func TestRemainderSuccess(t *testing.T) {
+	for _, tc := range []struct{ expression, value string }{
+		{"mod(-7,3)", "-1"},
+		{"mod(7,-3)", "1"},
+		{"mod(-7,-3)", "-1"},
+		{"mod(5.5,2)", "1.5"},
+		{"mod(-5.5,2)", "-1.5"},
+		{"mod(5.5,-2)", "1.5"},
+		{"mod(-6,3)", "0"}, // math.Mod returns -0; the application returns 0
+		{"mod(-0,3)", "0"},
+		{"mod(-1e308,1e308)", "0"},
+		{"mod(5,1e308)", "5"},
+		{"mod(1e-300,1e308)", "1e-300"},
+		{"MOD(10,4)", "2"},
+		{"mod(1+4,2*2)", "1"},
+		{"log(mod(8,3),2)", "1"},
+		{"mod(5!,3)", "0"},
+		{"mod(50%,0.25)", "0"},
+	} {
+		if ev := evaluate(t, tc.expression); ev.Outcome.Kind != "success" || ev.Outcome.Value != tc.value {
+			t.Errorf("%q = %+v, want %s", tc.expression, ev.Outcome, tc.value)
+		}
+	}
+}
+
+func TestParenthesizedFunctionsFinishBeforeFollowingOperators(t *testing.T) {
+	for _, tc := range []struct{ expression, value string }{
+		{"mod(7,3)^2", "1"},
+		{"mod(7,3)^0", "1"},
+		{"mod(log(100),3)", "2"},
+		{"sin(90)^0", "1"},
+		{"log(100)^2", "4"},
+		{"log(100)!", "2"},
+		{"(log (8),2)", "3"},
+		{"mod((log (8),2),2)", "1"},
+	} {
+		t.Run(tc.expression, func(t *testing.T) {
+			outcome := evaluate(t, tc.expression).Outcome
+			if outcome.Kind != "success" || outcome.Value != tc.value {
+				t.Fatalf("%s = %+v; want %s", tc.expression, outcome, tc.value)
+			}
+		})
+	}
+	if outcome := evaluate(t, "mod(1,log(10),10)").Outcome; outcome.Kind != "error" || outcome.Error.Code != "WRONG_ARITY" {
+		t.Fatalf("closed nested function captured an outer argument: %+v", outcome)
+	}
+}
+
+func TestRemainderErrorsAndFacts(t *testing.T) {
+	for _, tc := range []struct {
+		expression, code, stage string
+		span                    contracts.SourceSpan
+	}{
+		{"mod(1,0)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 0, End: 8}},
+		{"mod(1,-0)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 0, End: 9}},
+		{"1+mod(1,0)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 2, End: 10}},
+		{"mod(1)", "WRONG_ARITY", "parse", contracts.SourceSpan{Start: 5, End: 6}},
+		{"mod(1,2,3)", "WRONG_ARITY", "parse", contracts.SourceSpan{Start: 7, End: 8}},
+		{"mod()", "WRONG_ARITY", "parse", contracts.SourceSpan{Start: 4, End: 5}},
+		{"mod(1,)", "WRONG_ARITY", "parse", contracts.SourceSpan{Start: 6, End: 7}},
+		{"mod(,2)", "WRONG_ARITY", "parse", contracts.SourceSpan{Start: 4, End: 5}},
+		{"mod", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 3, End: 3}},
+		{"mod 1,2", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 4, End: 5}},
+		{"mod(1/0,3)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 4, End: 7}},
+	} {
+		ev := evaluate(t, tc.expression)
+		e := ev.Outcome.Error
+		if e == nil || e.Code != tc.code || e.Stage != tc.stage || e.Span == nil || *e.Span != tc.span {
+			t.Errorf("%q = %+v, want %s/%s at %v", tc.expression, e, tc.code, tc.stage, tc.span)
+			continue
+		}
+		if tc.code == "WRONG_ARITY" && e.Params["name"] != "mod" {
+			t.Errorf("%q params = %v, want name mod", tc.expression, e.Params)
+		}
+		if tc.stage == "parse" && ev.Facts != nil {
+			t.Errorf("%q parse failure supplied facts %+v", tc.expression, ev.Facts)
+		}
+	}
+	ev := evaluate(t, "1/(-0%)")
+	if e := ev.Outcome.Error; e == nil || e.Code != "DIVISION_BY_ZERO" || e.Stage != "evaluate" ||
+		e.Span == nil || *e.Span != (contracts.SourceSpan{Start: 0, End: 7}) {
+		t.Errorf("1/(-0%%) = %+v, want DIVISION_BY_ZERO/evaluate at 0..7", ev.Outcome)
+	}
+
+	for _, tc := range []struct {
+		expression string
+		facts      contracts.CalculationFacts
+	}{
+		{"mod(-7,3)", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{"mod": 1}, OperationCount: 1, Depth: 1}},
+		{"mod(5!,3)%", contracts.CalculationFacts{Operators: map[string]int{"!": 1, "%": 1}, Functions: map[string]int{"mod": 1}, OperationCount: 3, Depth: 1}},
+		{"mod(1,0)", contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{"mod": 1}, OperationCount: 1, Depth: 1}},
+		{"mod(1/0,3)", contracts.CalculationFacts{Operators: map[string]int{"/": 1}, Functions: map[string]int{"mod": 1}, OperationCount: 2, Depth: 1}},
+	} {
+		ev := evaluate(t, tc.expression)
+		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}
 }
