@@ -20,7 +20,7 @@ func TestPublicOriginBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newHandler(db, publicOrigin, true)
+	handler := newHandler(db, publicOrigin, true, false)
 	session := httptest.NewRecorder()
 	// TLS terminates at the proxy; the Go request itself uses plain HTTP.
 	handler.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "http://backend:8080/api/session", nil))
@@ -59,7 +59,7 @@ func TestUntrustedForwardedOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	request := httptest.NewRequest(http.MethodPost, "http://calculator.example/api/calculations",
 		strings.NewReader(`{"requestId":"spoof","expression":"1","angleUnit":"deg"}`))
 	request.Header.Set("Content-Type", "application/json")

@@ -4,8 +4,8 @@ Specifications for the Unnecessarily Advanced Calculator.
 
 ## Start here
 
-- [PLAN.md](PLAN.md): product identity, priorities, defaults, non-goals, and release
-  gates.
+- [PLAN.md](PLAN.md): product identity, priorities, defaults, non-goals, release
+  policy, and readiness gates.
 
 ## Product and implementation contracts
 
@@ -14,7 +14,7 @@ Specifications for the Unnecessarily Advanced Calculator.
 | [Calculation Engine](specs/calculation-engine.md) | Scientific grammar, numerical semantics, errors, and reduction steps |
 | [Application Service](specs/application-service.md) | HTTP operations, persistence, identity, and integration |
 | [History & Statistics](specs/history-and-statistics.md) | Durable personal records, reuse, and metrics |
-| [Client Experience](specs/client-experience.md) | Hybrid/minimal presentation, themes, Russian-first localization, and UX |
+| [Client Experience](specs/client-experience.md) | Typing-first console, tool panels, themes, Russian-first localization, and UX |
 | [Visualization & Animation](specs/visualization-and-animation.md) | Optional playback that highlights and reduces subexpressions |
 | [Multiplayer](specs/multiplayer.md) | Shared rooms, automatic publication, optional publication control, and reactions |
 | [Fun & Chaos](specs/fun-and-chaos.md) | Authored humor, personal/collective achievements, and effect limits |

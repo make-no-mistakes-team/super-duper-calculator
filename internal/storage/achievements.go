@@ -20,16 +20,29 @@ func GrantAchievements(ctx context.Context, db *sql.DB, owner, calculationID str
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	for _, id := range ids {
-		if !discovery.Known(id) {
-			return nil, ErrUnknownAchievement
-		}
-	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	granted, err := grantAchievements(ctx, tx, owner, calculationID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return granted, nil
+}
+
+// grantAchievements shares ownership, ID validation and first-award semantics
+// between direct grants and atomic discovery checkpoint commits.
+func grantAchievements(ctx context.Context, tx *sql.Tx, owner, calculationID string, ids []string) ([]contracts.Achievement, error) {
+	for _, id := range ids {
+		if !discovery.Known(id) {
+			return nil, ErrUnknownAchievement
+		}
+	}
 	var createdAt string
 	if err := tx.QueryRowContext(ctx,
 		"SELECT created_at FROM calculations WHERE session_id = ? AND id = ?",
@@ -58,9 +71,6 @@ func GrantAchievements(ctx context.Context, db *sql.DB, owner, calculationID str
 		if inserted != 0 {
 			granted = append(granted, contracts.Achievement{ID: id, EarnedAt: earnedAt})
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 	return granted, nil
 }

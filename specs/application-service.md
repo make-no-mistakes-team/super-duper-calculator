@@ -174,6 +174,16 @@ audience workload before treating these bounds as public-readiness evidence.
 It returns a display alias and the session's personal achievement state if that
 feature is enabled, but not the secret identity token.
 
+The `identity` response field is a domain-separated hash of the cookie token,
+used only to detect session replacement. It cannot authenticate requests.
+When it changes, the client clears the prior session's cached history, awards,
+and outcome before accepting new responses, then loads the new owner's first
+history page. Bootstrap and collection refresh share one in-flight request,
+but an established session does not wait for an optional refresh. A failed
+refresh preserves session readiness unless the service returns an authoritative
+401. Responses from a replaced or invalidated session cannot restore its data
+or invalidate a newer session.
+
 The cookie must be unpredictable, persistent across ordinary browser restarts,
 HttpOnly, SameSite-protected, and Secure on HTTPS deployments. A persistent
 expiry of at least the planned public deployment lifetime is required.
@@ -292,6 +302,14 @@ returns the existing collection without requesting new announcements.
 
 An accepted syntax or domain error is still a calculation record and uses
 HTTP 200. Request failures use the error responses below and create no record.
+
+`ACHIEVEMENTS_ENABLED` defaults to true and gates the personal collection,
+discovery comments, and comic incident. Optional reconciliation has a separate
+bounded deadline; a failure omits its extras without changing the saved outcome.
+Each completed batch commits its awards and reconciliation progress together.
+Later calls resume unfinished history after the last committed batch, including
+after restart; they do not repeat the already evaluated prefix or announce
+historical awards.
 
 ## Durable submission and repeated actions
 

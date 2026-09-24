@@ -108,8 +108,16 @@ and leaves the committed calculation intact.
 
 `storage.ListAchievements(ctx, db, owner)` returns the collection in stable ID
 order. Migration `002_achievements.sql` enforces one award per owner/ID and binds
-its source calculation to the same owner. Keep a pre-upgrade backup: binaries
-that only support schema version 1 reject version 2.
+its source calculation to the same owner. Migration `003_personal_effects.sql`
+adds the durable personal-scene cooldown without changing history or awards.
+Migration `004_discovery_progress.sql` stores each owner's evaluated sequence
+and accepted-action count. Progress and grants advance atomically, so bounded
+catch-up can resume after interruption or restart without skipping awards.
+New actions evaluate the unprocessed suffix with only the recent context their
+rules require.
+
+Keep a pre-upgrade backup: binaries supporting only schema versions 1–3 reject
+version 4. Upgrading preserves existing history and earned achievements.
 
 ## Room aggregates
 

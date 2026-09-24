@@ -1,70 +1,66 @@
 # Demo & Operations
 
-> Scope: Required demonstration of the core; optional showcase and audience
-> segments depend on what is actually included.
+> Scope: Local solo demonstration of the released calculator. The audience
+> segment is omitted unless rooms are implemented, selected, and verified.
 
 ## Narrative
 
-Start with an apparently ordinary, well-made calculator. Establish that it
-works, then reveal its unexpected personality. If rooms are ready, let the
-audience become part of the reveal.
+Start with the calculator. Show a correct result, recoverable error, and saved
+history before the optional personal reaction. Keep the browser on the local
+service during the fallback; it uses its own database.
 
-Prepare a short core/showcase sequence and a separate audience segment.
+Prepare a short core sequence. Public rooms and a language switch are not part
+of this local solo candidate.
 
 ## Short core and character sequence
 
 1. Open the default Russian interface.
 2. Calculate `sqrt(81)+2^3` and obtain `17`.
-3. Show that it entered personal history.
-4. Reload or reopen history, restore the expression, and reuse it.
+3. Open personal history; restore the saved expression and calculate it again.
+4. Reload the page and confirm the saved records remain.
 5. Submit a malformed expression such as `sqrt(81` and show a recoverable error.
-6. Calculate `60+7` and reveal the `six_seven` reaction: “Сикс-севен!”
-7. Optionally reveal one more selected capability, then finish cleanly.
+6. With personal discoveries enabled and a fresh anonymous identity, calculate
+   `60+7` and show the real result `67` alongside “Сикс-севен!”.
+7. If the current candidate includes another complete personal capability,
+   demonstrate it once. Finish with the calculator usable.
 
-The `six_seven` reveal is required for the planned Sprint 0 showcase.
-Rehearse it in a fresh anonymous browser context with humor enabled and no
-active announcement cooldown. Keep the result `67` visible during the reaction.
+The `six_seven` reveal needs a fresh anonymous browser context, humor enabled,
+and no active announcement cooldown. Keep `67` visible during the reaction.
 
 Suitable additional reveals include:
 
 - `6*7` for the `42` discovery;
 - `23*3` for the `69` discovery;
 - `sqrt(81)+abs(-2)+ln(e)` for the scientific-function achievement;
-- theme or minimal-mode switching with input preserved;
-- switching to English and back without changing the calculation;
-- on-demand redex playback for `2+3*4`;
-- the deterministic, safely reversible theatrical incident.
+- opening statistics and the achievement collection from history;
+- switching between violet and amber themes while preserving input;
+- three deliberate `1/0` submissions for the dismissible comic incident.
 
 Only use a reveal if its complete feature is in the released candidate.
 
-## Audience segment
+## Offline release artifacts
 
-If public rooms are ready:
+Obtain the local candidate from GitHub Releases under the
+[release policy](../PLAN.md#release-policy). Before going offline, download a
+runnable archive for the presentation device's OS and CPU architecture.
+Keep the executable and built web assets together.
 
-1. Show a QR code leading to the room invitation.
-2. Let participants enter with generated aliases.
-3. Show a real calculation arriving from another device.
-4. If enabled, react to a calculation and show aggregated emoji reactions.
-5. Invite enough independent participants to obtain `42` within the configured
-   window and trigger the collective discovery.
-6. Return to the calculator without an endless queue of effects.
+The downloaded build must start without the repository, development tools,
+a Node runtime, or external network access. Initialize a separate local
+database; public history is not synchronized to it.
 
-Public personal access can be demonstrated without a room. Room participation
-must be usable on phones, and calculation still works when a live subscription
-temporarily disconnects.
+## Rehearsal
 
-## Deterministic rehearsal
+Rehearse the selected artifact on the presentation device with external
+network access unavailable. Walk through the browser sequence, then restart
+the local process with the same SQLite file and browser identity. Confirm that
+saved results and errors remain available and that a restored expression can
+be calculated again.
 
-Use known trigger expressions, participant counts, cooldowns, and expected
-outcomes for each selected reveal.
-
-Previously earned personal achievements are not expected to announce again.
-Use a fresh anonymous browser context when a first-discovery reveal is needed.
-Rehearse against the service, its database, and any enabled room features.
-
-The theatrical incident's three zero-division attempts must be distinct
-deliberate actions. Its real errors remain visible and its automatic recovery
-must be checked.
+For the browser presentation, use a fresh anonymous context for a first
+achievement and wait out any previous announcement cooldown. Check the
+visual error and the click-to-reuse history action; API checks alone do not
+establish browser behavior.
 
 ## Candidate checklist
 
@@ -75,39 +71,34 @@ For every candidate:
 - committed records retained after restart and reopening the same file;
 - private history and clickable reuse;
 - a usable laptop and phone core layout;
-- a tested local or recorded fallback.
+- the copied and rehearsed local fallback on the presentation device.
 
 For each included extra:
 
 - jokes and achievements trigger without spamming;
-- the theatrical scene dismisses and automatically ends;
-- theme/minimal-mode switches preserve state;
-- localization includes errors and reactions, with Russian first-use behavior;
-- reduction highlights and collapses redexes correctly, with skip available;
-- public URL works on an external device;
-- room events and reactions work across independent clients;
-- optional publication control does not leak private actions;
-- reconnection does not replay old scenes.
+- theme switches preserve state;
+- disabling achievements leaves ordinary calculation and history available.
 
 Exclude unfinished features from the candidate.
 
+Leave at least 15 seconds between discovery announcements. The comic incident
+has a separate 120-second per-identity cooldown and ends within three seconds.
+Settings can independently suppress comments and large effects; awards still
+appear in the collection.
+
 ## Recovery
 
-Document how to:
-
-- disable large effects while preserving ordinary calculation;
-- disable room publication and collective reactions;
-- restart the application while retaining its database path and committed records;
-- start the local fallback with its separate database and built assets;
-- present the checked recording if live operation is unavailable.
-
-Follow the [offline fallback requirements](public-deployment.md#local-or-recorded-fallback)
-and the service's [reset](application-service.md#file-lifecycle) and
-[restore](application-service.md#backup-and-restore) procedures.
-If audience networking fails, show the core calculator and the available
-personal discoveries.
+If the public host or network fails, leave its process and database alone.
+Start the downloaded release on the presentation device using the rehearsed
+local configuration and database. Ordinary restarts must retain its history.
+Use the documented service and presentation controls to disable optional
+features if needed. Do not remove or copy a live SQLite file alone; follow the
+[backup and restore](application-service.md#backup-and-restore) procedure.
 
 ## Acceptance
 
-Run the selected sequence and fallback against the release candidate. Verify
-each advertised feature and its trigger conditions.
+On the presentation device, exercise startup, restart, and the browser sequence
+with the exact candidate artifact. Record its GitHub release, tag, source
+commit, and actual capability flags.
+Freeze the candidate only after the required checks pass; optional unfinished
+work is excluded, not treated as complete.

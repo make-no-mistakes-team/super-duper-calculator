@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/internal/storage"
 	"modernc.org/sqlite"
@@ -164,6 +165,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireLegacyRecord(t, db)
+	requireSchemaVersion(t, db, 4)
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", "session-1", 100); err != nil {
 		t.Fatalf("core schema not initialized: %v", err)
 	}
@@ -177,6 +179,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	requireLegacyRecord(t, reopened)
+	requireSchemaVersion(t, reopened, 4)
 	var sessions int
 	if err := reopened.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sessions WHERE id = ?", "session-1").Scan(&sessions); err != nil {
 		t.Fatal(err)
@@ -319,5 +322,69 @@ func requireLegacyRecord(t *testing.T, db *sql.DB) {
 	}
 	if content != "keep this legacy record" {
 		t.Fatalf("legacy record = %q", content)
+	}
+}
+
+func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
+	path := privateDatabasePath(t, "discovery-upgrade.sqlite")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	for _, migration := range []string{
+		"migrations/001_core.sql", "migrations/002_achievements.sql", "migrations/003_personal_effects.sql",
+	} {
+		schema, err := os.ReadFile(migration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := legacy.ExecContext(t.Context(), string(schema)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	saveAwardAction(t, legacy, "owner", "legacy-source", when)
+	if _, err := storage.GrantAchievements(t.Context(), legacy, "owner", "legacy-source", []string{"six_seven"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(t.Context(), "PRAGMA user_version = 3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := storage.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	requireSchemaVersion(t, upgraded, 4)
+	var source, expression string
+	if err := upgraded.QueryRowContext(t.Context(), `
+		SELECT a.calculation_id, c.expression FROM achievements a
+		JOIN calculations c ON c.session_id = a.session_id AND c.id = a.calculation_id
+		WHERE a.session_id = 'owner' AND a.achievement_id = 'six_seven'`).Scan(&source, &expression); err != nil ||
+		source != "legacy-source" || expression != "((((((60+7))))))" {
+		t.Fatalf("migration changed history or award source: %q, %q, %v", source, expression, err)
+	}
+	awards, err := storage.ListAchievements(t.Context(), upgraded, "owner")
+	if err != nil || len(awards) != 1 || !awards[0].EarnedAt.Equal(when) {
+		t.Fatalf("migration changed earnedAt: %+v, %v", awards, err)
+	}
+	progress, err := storage.ReadDiscoveryProgress(t.Context(), upgraded, "owner")
+	if err != nil || progress != (storage.DiscoveryProgress{}) {
+		t.Fatalf("migration skipped unreconciled history: %+v, %v", progress, err)
+	}
+	// Re-evaluating the preserved prefix advances progress without replacing
+	// its existing award or claiming a fresh announcement.
+	awarded, err := storage.CommitDiscoveryProgress(t.Context(), upgraded, "owner",
+		progress, storage.DiscoveryProgress{LastSequence: 1, AcceptedCount: 1},
+		[]storage.DiscoveryGrant{{CalculationID: "legacy-source", IDs: []string{"six_seven"}}})
+	if err != nil || len(awarded) != 0 {
+		t.Fatalf("upgraded history re-awarded discovery: %+v, %v", awarded, err)
 	}
 }

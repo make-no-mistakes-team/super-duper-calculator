@@ -51,6 +51,9 @@ svg { flex-shrink: 0; }
 .workspace-brand strong { color: #f2f4f2; font-weight: 400; }
 .brand-mark { color: #f2f4f2; }
 .workspace-state { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 400 1.125rem/1.25 var(--controls); }
+.workspace-header-actions { display: flex; align-items: center; gap: 20px; }
+.header-settings { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: 400 1.125rem/1.25 var(--controls); }
+.header-settings:hover, .header-settings[aria-expanded='true'] { color: var(--accent); border-color: var(--accent); }
 
 .console-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 24px; width: 100%; max-width: 1040px; margin: clamp(48px, 12vh, 112px) auto auto; padding-bottom: 48px; }
 .console-layout[data-tool-open='true'] { grid-template-columns: minmax(0, 1fr) 336px; max-width: none; }
@@ -97,6 +100,7 @@ svg { flex-shrink: 0; }
 .full-value code, .copy-error code { display: block; padding-top: 8px; color: #f2f4f2; user-select: all; overflow-wrap: anywhere; }
 .copy-error { color: var(--error); font-size: 1rem; line-height: 1.5; }
 .result-error { margin: 20px 0 8px; color: var(--error); font-size: 1.15rem; font-weight: 700; }
+.error-stage { margin: 0 0 12px; color: var(--muted); font-size: .875rem; }
 .error-advice { max-width: 65ch; margin: 0 0 16px; color: var(--muted); font-size: 1rem; line-height: 1.6; }
 .result-highlight { display: block; margin: 16px 0; color: #f2f4f2; white-space: pre-wrap; overflow-wrap: anywhere; }
 .result-highlight mark { background: var(--error); color: #000; }
@@ -192,6 +196,9 @@ svg { flex-shrink: 0; }
   .workspace-brand { gap: 10px; font-size: .65rem; }
   .brand-mark { width: 26px; height: 26px; }
   .workspace-state { gap: 5px; font-size: 1rem; }
+  .workspace-header-actions { gap: 12px; }
+  .header-settings { padding: 8px; }
+  .header-settings span { display: none; }
   .console-layout, .console-layout[data-tool-open='true'] { margin-top: 40px; }
   .editor-topline { padding: 8px 16px 0; }
   .calculator-expression { min-height: 140px; padding: 20px 16px; font-size: 1.25rem; }

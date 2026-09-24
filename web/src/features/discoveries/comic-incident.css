@@ -1,0 +1,114 @@
+.comic-incident {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-top: 1px solid #bda2d5;
+  background: var(--glass);
+  background-image: var(--glass-sheen);
+  color: #f2f4f2;
+}
+
+.comic-incident::before {
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgb(189 162 213 / .35);
+  content: '';
+  pointer-events: none;
+}
+
+.comic-incident::after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 2px;
+  background: #d9bdf0;
+  content: '';
+  pointer-events: none;
+}
+
+.comic-incident__copy {
+  min-width: 0;
+}
+
+.comic-incident__heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 5px;
+}
+
+.comic-incident__count {
+  color: #e2c8f4;
+  font: 400 .75rem/1.25 var(--mono);
+  white-space: nowrap;
+}
+
+.comic-incident__heading h2 {
+  margin: 0;
+  color: #f2e7ff;
+  font: 400 1.375rem/1.1 var(--controls);
+}
+
+.comic-incident__setup,
+.comic-incident__reveal {
+  margin: 0;
+  font-size: .875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.comic-incident__setup {
+  color: var(--muted);
+}
+
+.comic-incident__reveal {
+  margin-top: 3px;
+  color: #f2e7ff;
+  animation: comic-incident-reveal 420ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.comic-incident__reveal strong {
+  color: #e2c8f4;
+  font-weight: 600;
+}
+
+.comic-incident__close {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e2c8f4;
+}
+
+.comic-incident__close:hover {
+  background: var(--surface-hover);
+  color: #fff;
+}
+
+@keyframes comic-incident-reveal {
+  from { opacity: .75; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 480px) {
+  .comic-incident { padding: 10px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comic-incident__reveal { animation: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .comic-incident {
+    background: var(--surface);
+    background-image: none;
+  }
+}

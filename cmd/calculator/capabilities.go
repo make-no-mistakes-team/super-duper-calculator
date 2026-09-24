@@ -8,16 +8,17 @@ import (
 
 var coreCapabilities = contracts.Capabilities{
 	SemanticsVersion: semanticsVersion,
-	Operators:        []string{"+", "-", "*", "/", "^"},
+	Operators:        []string{"+", "-", "*", "/", "^", "!", "%"},
 	Functions: map[string][]int{
 		"sqrt": {1}, "abs": {1}, "exp": {1}, "ln": {1}, "log": {1, 2},
 		"sin": {1}, "cos": {1}, "tan": {1}, "asin": {1}, "acos": {1}, "atan": {1},
+		"mod": {2},
 	},
 	AngleUnits:       []contracts.AngleUnit{contracts.Degrees, contracts.Radians},
 	DefaultAngleUnit: contracts.Degrees,
 	Limits:           contracts.CapabilityLimits{ExpressionLength: 1024, Tokens: 256, Nesting: 32},
 	Features: contracts.CapabilityFeatures{
-		Factorial: false, Percentage: false, Remainder: false, Statistics: false,
+		Factorial: true, Percentage: true, Remainder: true, Statistics: false,
 		Achievements: false, Themes: false, MinimalPresentation: false,
 		Localization: false, ReductionPlayback: false, Rooms: false,
 		RoomReactions: false, RoomPublicationControl: false,
@@ -27,5 +28,7 @@ var coreCapabilities = contracts.Capabilities{
 func (a api) capabilities(w http.ResponseWriter, _ *http.Request) {
 	available := coreCapabilities
 	available.Features.Statistics = a.statisticsEnabled
+	available.Features.Achievements = a.discoveries != nil
+	available.Features.Themes = true
 	writeJSON(w, http.StatusOK, available)
 }

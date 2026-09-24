@@ -24,10 +24,12 @@ Buttons insert the canonical syntax described by
 [Calculation Engine](calculation-engine.md). The service evaluates all expressions.
 
 A single tool bay contains scientific functions, an arithmetic keypad, and
-personal history. It docks beside the editor on desktop and becomes a bottom
-sheet on phones. Escape and the close control dismiss it and restore focus to
-the trigger. Phone keypad submission closes the sheet, reveals the answer,
-and leaves focus on an available control.
+personal history, plus settings for included features. It docks beside the
+editor on desktop and becomes a bottom sheet on phones. Escape from the panel
+or a tool trigger, and the close control, dismiss it and restore focus to the
+active tool's trigger. Escape during IME composition does not dismiss the
+panel. Phone keypad submission closes the sheet, reveals the answer, and
+leaves focus on an available control.
 
 Do not reserve an empty result section; keep syntax help and limits with the
 functions. Inserting a function wraps selected text or places the caret inside

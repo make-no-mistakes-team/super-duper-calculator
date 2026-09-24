@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -11,7 +13,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"time"
 
@@ -29,12 +30,15 @@ type api struct {
 	engine            calculation.Engine
 	publicOrigin      *url.URL
 	statisticsEnabled bool
+	discoveries       *discoveryService
+	incidents         *incidentService
 }
 
 var errSessionRequired = errors.New("session required")
 
-func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled bool) http.Handler {
-	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin, statisticsEnabled: statisticsEnabled}
+func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled, achievementsEnabled bool) http.Handler {
+	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin, statisticsEnabled: statisticsEnabled,
+		discoveries: newDiscoveryService(db, achievementsEnabled), incidents: newIncidentService(db, achievementsEnabled)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -53,16 +57,6 @@ func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled bool) http.
 	guardedAPI := protectAPI(apiMux)
 	mux.Handle("/api", guardedAPI)
 	mux.Handle("/api/", guardedAPI)
-	if _, err := os.Stat("web/dist/index.html"); err == nil {
-		files := http.FileServer(http.Dir("web/dist"))
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodGet && r.Method != http.MethodHead {
-				http.NotFound(w, r)
-				return
-			}
-			files.ServeHTTP(w, r)
-		})
-	}
 	return mux
 }
 
@@ -112,8 +106,8 @@ func (a api) session(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusForbidden, "INVALID_ORIGIN")
 		return
 	}
-	if _, err := a.identity(r); err == nil {
-		writeJSON(w, http.StatusOK, map[string]string{"alias": "Гость"})
+	if owner, err := a.identity(r); err == nil {
+		a.writeSession(w, r, owner)
 		return
 	} else if !errors.Is(err, errSessionRequired) {
 		identityError(w, err)
@@ -134,7 +128,23 @@ func (a api) session(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		Secure: r.TLS != nil || (a.publicOrigin != nil && a.publicOrigin.Scheme == "https"),
 	})
-	writeJSON(w, http.StatusOK, map[string]string{"alias": "Гость"})
+	a.writeSession(w, r, id)
+}
+
+func (a api) writeSession(w http.ResponseWriter, r *http.Request, owner string) {
+	identity := sha256.Sum256([]byte("calculator-public-identity:" + owner))
+	response := contracts.SessionResponse{Alias: "Гость", Identity: hex.EncodeToString(identity[:])}
+	if a.discoveries != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		awards, catalog, err := a.discoveries.Collection(ctx, owner)
+		cancel()
+		if err == nil {
+			response.Achievements = awards
+			response.DiscoveryCatalog = catalog
+			response.DiscoveriesAvailable = true
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func decodeRequest(w http.ResponseWriter, r *http.Request, dst any) error {
@@ -202,7 +212,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	previous, err := a.recordByAction(r, owner, request.RequestID)
 	switch {
 	case err == nil:
-		writeCalculation(w, previous, request)
+		writeCalculation(w, previous, request, nil, nil)
 		return
 	case !errors.Is(err, sql.ErrNoRows):
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
@@ -265,7 +275,25 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeCalculation(w, record, request)
+	var achievements []contracts.Achievement
+	var events []contracts.FunEvent
+	if inserted != 0 && a.discoveries != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		achievements, events, err = a.discoveries.Process(ctx, owner, record)
+		cancel()
+		if err != nil {
+			achievements, events = nil, nil
+		}
+	}
+	if inserted != 0 && a.incidents != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		incidentEvents, incidentErr := a.incidents.Process(ctx, owner, record)
+		cancel()
+		if incidentErr == nil {
+			events = append(events, incidentEvents...)
+		}
+	}
+	writeCalculation(w, record, request, achievements, events)
 }
 
 func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts.CalculationRecord, error) {
@@ -274,13 +302,15 @@ func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts
 		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID), nil)
 }
 
-func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest) {
+func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest,
+	achievements []contracts.Achievement, events []contracts.FunEvent) {
 	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit || request.Room != nil {
 		apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
 		return
 	}
 	writeJSON(w, http.StatusOK, contracts.CalculationResponse{
 		Calculation: record, Publication: contracts.Publication{Status: "private"},
+		Achievements: achievements, FunEvents: events,
 	})
 }
 

@@ -142,6 +142,27 @@ A room URL clearly identifies the shared context before entry. New room-mode
 calculations contribute to the shared experience; leaving restores private
 operation.
 
+## Release policy
+
+Publish runnable versions through GitHub Releases tied to Git tags. Use GitHub
+Actions to check and build the tagged source, package the Go executable with
+the built web assets, and upload the archives as release assets.
+
+Reuse the project's build and check commands and standard archive tools.
+Do not create or extend a custom release system, including parallel release
+manifests, source-revision stamp protocols, or frozen-demo bundle lifecycles.
+Use GitHub's release features for publication and, when required, immutability.
+An alternative release system requires explicit user approval.
+
+Exclude `.env`, credentials, existing SQLite databases and sidecar files, and
+personal history from release assets. A downloaded application initializes its
+own database. GitHub's automatic source archives do not replace runnable
+application packages.
+
+Release publication does not replace correctness checks or presentation
+rehearsal. The presentation and fallback requirements are defined in
+[Demo & Operations](specs/demo-and-operations.md).
+
 ## Release gates
 
 ### Core ready

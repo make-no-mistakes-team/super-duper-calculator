@@ -40,6 +40,13 @@ func run() (runErr error) {
 			return errors.New("invalid STATISTICS_ENABLED")
 		}
 	}
+	achievementsEnabled := true
+	if value := os.Getenv("ACHIEVEMENTS_ENABLED"); value != "" {
+		achievementsEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return errors.New("invalid ACHIEVEMENTS_ENABLED")
+		}
+	}
 	openCtx, cancelOpen := context.WithTimeout(ctx, 10*time.Second)
 	db, err := storage.Open(openCtx, os.Getenv("DATABASE_PATH"))
 	cancelOpen()
@@ -57,9 +64,13 @@ func run() (runErr error) {
 		addr = "127.0.0.1:8080"
 	}
 
+	handler, err := withClient(newHandler(db, publicOrigin, statisticsEnabled, achievementsEnabled), os.Getenv("WEB_ASSETS_DIR"))
+	if err != nil {
+		return err
+	}
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newHandler(db, publicOrigin, statisticsEnabled),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,

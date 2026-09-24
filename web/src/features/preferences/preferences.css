@@ -1,0 +1,212 @@
+.preferences-panel {
+  display: grid;
+  gap: 24px;
+  color: inherit;
+}
+
+.preferences-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.preferences-group legend {
+  padding: 0;
+  color: var(--muted);
+  font: 400 1.25rem/1.25 var(--controls);
+}
+
+.preferences-options {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.preferences-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  font: 400 1.125rem/1.25 var(--controls);
+  cursor: pointer;
+}
+
+.preferences-choice:hover,
+.preferences-choice:focus-within {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.preferences-choice input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.preferences-choice input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.preferences-swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgb(255 255 255 / .35);
+  border-radius: 50%;
+}
+
+.preferences-swatch--violet { background: #a484bb; }
+.preferences-swatch--amber { background: #efb66d; }
+
+.preferences-label {
+  display: grid;
+  gap: 4px;
+}
+
+.preferences-label small {
+  color: var(--muted);
+  font: 400 .8125rem/1.4 'Golos Text', sans-serif;
+}
+
+.preferences-empty {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* This alternate palette has no effect until a user selects the amber theme. */
+html[data-theme='amber'] {
+  color: #fbf0e2;
+  background: #100a08;
+  scrollbar-color: #ac8363 #100a08;
+  --surface: #1b110d;
+  --surface-hover: #38251b;
+  --line: #92745e;
+  --frame: #d9ae82;
+  --muted: #ddc8b3;
+  --accent: #ffd18a;
+  --error: #ff9e9b;
+  --glass: rgb(29 17 12 / .76);
+  --glass-sheen: linear-gradient(125deg, rgb(255 224 177 / .1), transparent 43%, rgb(163 91 44 / .06));
+}
+
+html[data-theme='amber'] body {
+  background:
+    radial-gradient(ellipse at 7% 12%, rgb(137 79 41 / .18), transparent 57%),
+    radial-gradient(ellipse at 96% 82%, rgb(124 66 29 / .15), transparent 59%),
+    linear-gradient(125deg, #100a08 12%, #1c110d 48%, #0e0908 80%);
+  background-attachment: fixed;
+}
+
+html[data-theme='amber'] ::selection {
+  color: #1b100a;
+  background: var(--accent);
+}
+
+html[data-theme='amber'] button:disabled { color: #ac9a86; }
+
+html[data-theme='amber'] .workspace-brand strong,
+html[data-theme='amber'] .brand-mark,
+html[data-theme='amber'] .calculator-expression,
+html[data-theme='amber'] .result-value,
+html[data-theme='amber'] .result-highlight,
+html[data-theme='amber'] .full-value code,
+html[data-theme='amber'] .copy-error code,
+html[data-theme='amber'] .syntax-help dt {
+  color: #fbf0e2;
+}
+
+html[data-theme='amber'] .editor-console,
+html[data-theme='amber'] .tool-bay {
+  border-top-color: #f6dbb6;
+}
+
+html[data-theme='amber'] .editor-console:focus-within { border-color: #ffe0af; }
+html[data-theme='amber'] .calculator-expression::placeholder { color: #bba48f; }
+html[data-theme='amber'] .input-hint kbd { color: #f8e8d5; }
+
+html[data-theme='amber'] .calculator-submit {
+  border-color: #f8dfbd;
+  background: #f8dfbd;
+  color: #1b100a;
+}
+
+html[data-theme='amber'] .calculator-submit:not(:disabled):hover {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+html[data-theme='amber'] .calculator-submit:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: #ac9a86;
+}
+
+html[data-theme='amber'] .tool-switches button,
+html[data-theme='amber'] .calculator-key,
+html[data-theme='amber'] .function-key {
+  background: rgb(43 27 19 / .68);
+  color: #f5e7d5;
+}
+
+html[data-theme='amber'] .tool-switches button[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: rgb(101 59 28 / .66);
+  color: var(--accent);
+}
+
+html[data-theme='amber'] .calculator-key--operator { border-color: #b99977; color: var(--accent); }
+
+html[data-theme='amber'] .calculator-key:hover,
+html[data-theme='amber'] .function-key:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+html[data-theme='amber'] .calculator-key:active,
+html[data-theme='amber'] .function-key:active,
+html[data-theme='amber'] .syntax-keys button:active {
+  background: #59391e;
+}
+
+html[data-theme='amber'] .editor-options select:hover,
+html[data-theme='amber'] .text-button:not(:disabled):hover,
+html[data-theme='amber'] .tool-switches button:hover,
+html[data-theme='amber'] .close-tool:hover,
+html[data-theme='amber'] .erase-key:hover {
+  color: #fff4e5;
+}
+
+html[data-theme='amber'] .tool-switches button[aria-expanded='true']:hover { color: var(--accent); }
+html[data-theme='amber'] .calculation-result { background: rgb(17 9 6 / .3); }
+
+html[data-theme='amber'] .secondary-button,
+html[data-theme='amber'] .history-load-more,
+html[data-theme='amber'] .history-expression,
+html[data-theme='amber'] .syntax-keys button {
+  color: #f4e6d4;
+}
+
+@media (max-width: 900px) {
+  html[data-theme='amber'] .tool-switches { background: rgb(20 12 9 / .97); }
+  html[data-theme='amber'] .tool-switches button { background: transparent; }
+  html[data-theme='amber'] .tool-switches button[aria-expanded='true'] { background: rgb(101 59 28 / .66); }
+  html[data-theme='amber'] .tool-bay { background-color: rgb(25 14 10 / .96); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-theme='amber'] .editor-console,
+  html[data-theme='amber'] .tool-bay,
+  html[data-theme='amber'] .tool-switches {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

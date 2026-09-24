@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const web = join(root, "web");
 const binary = join(root, "bin", "calculator");
+const stagedWeb = join(root, "bin", "web");
 const environmentFile = join(root, ".env");
 const children = new Map();
 const interruption = new AbortController();
@@ -99,9 +100,22 @@ async function buildGo() {
   await run("go", ["build", "-o", binary, "./cmd/calculator"]);
 }
 
+async function buildWeb() {
+  await run("npm", ["run", "build"], web);
+  await mkdir(join(root, "bin"), { recursive: true });
+  const staging = await mkdtemp(join(root, "bin", ".web-"));
+  try {
+    await cp(join(web, "dist"), staging, { recursive: true });
+    await rm(stagedWeb, { recursive: true, force: true });
+    await rename(staging, stagedWeb);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
 
 async function develop() {
   await buildGo();
+  await buildWeb();
   const servers = [
     { name: "Go server", finished: start(binary, []) },
     { name: "Vite", finished: start(process.execPath, [join(web, "node_modules", "vite", "bin", "vite.js")], web) },
@@ -123,10 +137,10 @@ const tasks = {
   },
   dev: develop,
   "build-go": buildGo,
-  "build-web": () => run("npm", ["run", "build"], web),
+  "build-web": buildWeb,
   async build() {
     await buildGo();
-    await tasks["build-web"]();
+    await buildWeb();
   },
   async check() {
     await run("go", ["build", "./..."]);

@@ -86,7 +86,7 @@ changes its controls, not its mathematical contents or progress.
 
 Reduced-motion users can inspect static steps or reveal replacements without
 large movements. The final result and important text do not depend on seeing a
-brief animation. A minimal calculator layout can still open playback explicitly.
+brief animation. The typing-first console can open playback explicitly.
 
 Large comedic scenes must not compete with this presentation. The common
 effect scheduler gives one strong effect the screen at a time.

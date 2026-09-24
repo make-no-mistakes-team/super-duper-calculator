@@ -99,8 +99,10 @@ type Publication struct {
 }
 
 type CalculationResponse struct {
-	Calculation CalculationRecord `json:"calculation"`
-	Publication Publication       `json:"publication"`
+	Calculation  CalculationRecord `json:"calculation"`
+	Publication  Publication       `json:"publication"`
+	Achievements []Achievement     `json:"achievements,omitempty"`
+	FunEvents    []FunEvent        `json:"funEvents,omitempty"`
 }
 
 type HistoryPage struct {
@@ -128,6 +130,36 @@ type PersonalStatistics struct {
 type Achievement struct {
 	ID       string    `json:"id"`
 	EarnedAt time.Time `json:"earnedAt"`
+}
+
+type DiscoveryText struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Comment     string `json:"comment"`
+}
+
+type DiscoveryDefinition struct {
+	ID string        `json:"id"`
+	RU DiscoveryText `json:"ru"`
+	EN DiscoveryText `json:"en"`
+}
+
+type FunEvent struct {
+	ID        string         `json:"id"`
+	RuleID    string         `json:"ruleId"`
+	Kind      string         `json:"kind"`
+	Scope     string         `json:"scope"`
+	Params    map[string]any `json:"params"`
+	CreatedAt time.Time      `json:"createdAt"`
+	ExpiresAt time.Time      `json:"expiresAt"`
+}
+
+type SessionResponse struct {
+	Alias                string                `json:"alias"`
+	Identity             string                `json:"identity"`
+	Achievements         []Achievement         `json:"achievements,omitempty"`
+	DiscoveryCatalog     []DiscoveryDefinition `json:"discoveryCatalog,omitempty"`
+	DiscoveriesAvailable bool                  `json:"discoveriesAvailable"`
 }
 
 type APIError struct {

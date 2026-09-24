@@ -80,6 +80,8 @@ export type CalculationRecord = {
 export type CalculationResponse = {
   calculation: CalculationRecord;
   publication: { status: 'private' | 'published' | 'unavailable' };
+  achievements?: Achievement[];
+  funEvents?: FunEvent[];
 };
 
 export type HistoryPage = {
@@ -107,6 +109,36 @@ export type PersonalStatistics = {
 export type Achievement = {
   id: string;
   earnedAt: string;
+};
+
+export type DiscoveryText = {
+  name: string;
+  description: string;
+  comment: string;
+};
+
+export type DiscoveryDefinition = {
+  id: string;
+  ru: DiscoveryText;
+  en: DiscoveryText;
+};
+
+export type FunEvent = {
+  id: string;
+  ruleId: string;
+  kind: 'comment' | 'scene';
+  scope: 'personal' | 'room';
+  params: Record<string, unknown>;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type SessionResponse = {
+  alias: string;
+  identity: string;
+  achievements?: Achievement[];
+  discoveryCatalog?: DiscoveryDefinition[];
+  discoveriesAvailable: boolean;
 };
 
 export type ErrorResponse = {

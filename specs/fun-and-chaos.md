@@ -67,7 +67,10 @@ The repeated-calculation rule counts deliberate actions, not transport retries.
 The usage count includes accepted mathematical errors but excludes rejected
 requests, history reads, and playback.
 
-The touch-grass gag may add comments at 50 and 100 accepted calculations.
+The touch-grass gag adds comments at 50 and 100 accepted calculations without
+additional awards. These thresholds live in the personal discovery service's
+configuration; the event carries the accepted count. Retries and collection
+reads never emit a milestone comment.
 
 ### Backend rule interface
 
@@ -91,6 +94,10 @@ The initial deterministic trigger is three deliberate division-by-zero outcomes
 within 60 seconds for the same identity, subject to the strong-effect cooldown.
 It is a personal effect; one person must not force every room viewer into it.
 
+Eligibility uses owned committed actions. Their timestamps may differ from
+commit order; the three actions must fit one sixty-second interval. Actions
+committed after the triggering record cannot qualify it retroactively.
+
 Requirements:
 
 - The real division-by-zero error remains available and understandable.
@@ -102,6 +109,12 @@ Requirements:
   trap navigation, or interfere with operating-system controls.
 
 Render the incident in the client while the service continues normally.
+
+`ACHIEVEMENTS_ENABLED=false` disables personal awards, comments, and this scene.
+The service grants awards after the core calculation commits; session bootstrap
+quietly repairs missing awards from owned history. Retries never announce them.
+Scene events expire after ten seconds; the client drops events already three
+seconds old and shows a fresh scene for at most three seconds.
 
 ## Collective candidates
 

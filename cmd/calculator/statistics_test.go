@@ -13,7 +13,7 @@ import (
 
 func TestStatisticsAPITracksOwnedAcceptedActions(t *testing.T) {
 	db, path := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, nil, http.MethodGet, "/api/statistics", ""), http.StatusUnauthorized)
 	owner := browserSession(t, handler)
 	other := browserSession(t, handler)
@@ -77,7 +77,7 @@ func TestStatisticsAPITracksOwnedAcceptedActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	handler = newHandler(reopened, nil, true)
+	handler = newHandler(reopened, nil, true, false)
 	if afterRestart := get(owner); !reflect.DeepEqual(stats, afterRestart) {
 		t.Fatalf("restart changed derived metrics: %+v != %+v", afterRestart, stats)
 	}
@@ -89,8 +89,8 @@ func TestStatisticsAPITracksOwnedAcceptedActions(t *testing.T) {
 
 func TestStatisticsDisableAndDerivationFailureLeaveCoreAvailable(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	enabled := newHandler(db, nil, true)
-	disabled := newHandler(db, nil, false)
+	enabled := newHandler(db, nil, true, false)
+	disabled := newHandler(db, nil, false, false)
 	owner := browserSession(t, enabled)
 	body := `{"requestId":"first","expression":"60+7","angleUnit":"deg"}`
 	first := decodeBody[contracts.CalculationResponse](t, apiRequest(enabled, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)

@@ -57,6 +57,7 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 	operators := map[string]struct{ expression, want string }{
 		"+": {"2+3", "5"}, "-": {"2-3", "-1"}, "*": {"2*3", "6"},
 		"/": {"6/3", "2"}, "^": {"2^3", "8"},
+		"!": {"5!", "120"}, "%": {"10%", "0.1"},
 	}
 	for _, operator := range advertised.Operators {
 		example, ok := operators[operator]
@@ -82,6 +83,7 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 		"asin": {{[]string{"1"}, "90"}},
 		"acos": {{[]string{"1"}, "0"}},
 		"atan": {{[]string{"1"}, "45"}},
+		"mod":  {{[]string{"7", "3"}, "1"}},
 	}
 	for function, arities := range advertised.Functions {
 		examples := functions[function]

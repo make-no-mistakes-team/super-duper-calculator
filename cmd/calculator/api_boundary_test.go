@@ -63,7 +63,7 @@ func decodeBody[T any](t *testing.T, w *httptest.ResponseRecorder, status int) T
 
 func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	body := `{"requestId":"anonymous","expression":"2+2","angleUnit":"deg"}`
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/history", ""},
@@ -86,13 +86,21 @@ func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 	}
 
 	cookie := browserSession(t, handler)
+	originalSession := decodeBody[contracts.SessionResponse](t, apiRequest(handler, cookie, http.MethodGet, "/api/session", ""), http.StatusOK)
+	sameSession := decodeBody[contracts.SessionResponse](t, apiRequest(handler, cookie, http.MethodGet, "/api/session", ""), http.StatusOK)
+	if originalSession.Identity == "" || originalSession.Identity != sameSession.Identity || originalSession.Identity == cookie.Value {
+		t.Fatal("public identity must be stable without exposing the authentication cookie")
+	}
 	decodeBody[contracts.CalculationResponse](t, apiRequest(handler, cookie, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if _, err := db.Exec("UPDATE sessions SET expires_at = 0 WHERE id = ?", cookie.Value); err != nil {
 		t.Fatal(err)
 	}
 	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, cookie, http.MethodGet, "/api/history", ""), http.StatusUnauthorized)
 	w = apiRequest(handler, cookie, http.MethodGet, "/api/session", "")
-	decodeBody[map[string]string](t, w, http.StatusOK)
+	replacementSession := decodeBody[contracts.SessionResponse](t, w, http.StatusOK)
+	if replacementSession.Identity == originalSession.Identity {
+		t.Fatal("replacement identity retained the expired session identifier")
+	}
 	if len(w.Result().Cookies()) != 1 {
 		t.Fatal("expired session was not replaced through bootstrap")
 	}
@@ -108,7 +116,7 @@ func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 
 func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
 	body := `{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"deg"}`
 	responses := make(chan *httptest.ResponseRecorder, 16)
@@ -155,7 +163,7 @@ func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 
 func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
 	other := browserSession(t, handler)
 	insert := func(i int, identity string) {
@@ -215,7 +223,7 @@ func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 
 func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 	db, path := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
 	body := `{"requestId":"committed","expression":"67","angleUnit":"deg"}`
 	original := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
@@ -267,7 +275,7 @@ func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 
 func TestUnknownAPIRoutesRemainJSONWithoutSideEffects(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	handler := newHandler(db, nil, true)
+	handler := newHandler(db, nil, true, false)
 	for _, path := range []string{"/api", "/api/missing", "/api/calculations/not-owned/reduction"} {
 		w := apiRequest(handler, nil, http.MethodGet, path, "")
 		failure := decodeBody[contracts.ErrorResponse](t, w, http.StatusNotFound)

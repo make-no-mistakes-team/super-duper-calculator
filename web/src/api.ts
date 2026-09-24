@@ -1,4 +1,4 @@
-import type { CalculationRequest, CalculationResponse, Capabilities, HistoryPage } from './contracts';
+import type { CalculationRequest, CalculationResponse, Capabilities, HistoryPage, PersonalStatistics, SessionResponse } from './contracts';
 
 export class ApiStatusError extends Error {
   constructor(readonly status: number, readonly retryAfterSeconds: number | null) {
@@ -15,8 +15,8 @@ async function readJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function startSession(): Promise<void> {
-  await readJson<unknown>(await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin' }));
+export async function startSession(): Promise<SessionResponse> {
+  return readJson<SessionResponse>(await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin' }));
 }
 
 export async function getCapabilities(): Promise<Capabilities> {
@@ -26,6 +26,10 @@ export async function getCapabilities(): Promise<Capabilities> {
 export async function getHistory(cursor: string | null): Promise<HistoryPage> {
   const query = cursor === null ? '' : `?cursor=${encodeURIComponent(cursor)}`;
   return readJson<HistoryPage>(await fetch(`/api/history${query}`, { cache: 'no-store', credentials: 'same-origin' }));
+}
+
+export async function getStatistics(): Promise<PersonalStatistics> {
+  return readJson<PersonalStatistics>(await fetch('/api/statistics', { cache: 'no-store', credentials: 'same-origin' }));
 }
 
 export async function postCalculation(request: CalculationRequest): Promise<CalculationResponse> {

@@ -55,9 +55,15 @@ with `.env.example` when configuration changes.
 - `DATABASE_PATH` defaults to `data/calculator.sqlite`. Relative paths resolve
   from the Go process's working directory; `make` starts it at the repository
   root. Use an absolute path on permanent local storage when deploying.
+- `WEB_ASSETS_DIR` selects a built client directory containing `index.html`.
+  When unset, Go uses `web` beside its executable (`bin/web` after `make build`).
+  A missing or invalid client stops startup; keep the database outside this
+  directory.
 - `STATISTICS_ENABLED` defaults to `true`. Set it to `false` to disable
   `GET /api/statistics`; calculations and history remain available. See the
   [statistics response](specs/application-service.md#optional-statistics-response).
+- `ACHIEVEMENTS_ENABLED` defaults to `true`. Set it to `false` to disable
+  personal discoveries and reactions without disabling calculation or history.
 - Go creates missing database directories and the file with private permissions.
   The default data directory and `.sqlite` files, including their sidecars, are
   ignored by Git. Keep custom database locations out of version control too.
@@ -95,18 +101,70 @@ defines rate, concurrency, connection, payload, timeout, and response bounds.
 ## Build and check
 
 ```sh
-make build       # Separate bin/calculator and web/dist outputs
+make build       # bin/calculator and copied bin/web assets
 make build-go    # Only the Go binary
-make build-web   # Only the web build
+make build-web   # Build web/dist and replace bin/web with fresh assets
 make check       # Go build, vet, tests; web typecheck and build
 ```
 
 CI uses the same setup and checks with CGO disabled. Storage checks use isolated
 database files.
 
-After `make build`, run `./bin/calculator` from the repository root to serve
-`web/dist` and the API together. The binary uses `HTTP_ADDR` and does not load
-`.env`; export any required configuration before starting it.
+`make dev` also stages `bin/web`; Vite still reloads browser changes. The Go
+binary serves the staged client and API from any working directory. For a
+one-process launch after `make build`:
+
+```sh
+APP="$PWD/bin"
+(cd /tmp && HTTP_ADDR=127.0.0.1:8088 DATABASE_PATH="$APP/../data/calculator.sqlite" "$APP/calculator")
+```
+
+The binary does not load `.env`; export any required configuration. To serve
+assets from another directory, set `WEB_ASSETS_DIR` to that directory. Running
+the built application needs neither Node.js nor the source checkout: keep
+`calculator` and the adjacent `web` directory together.
+
+## Releases
+
+Pushing a version tag matching `v*` triggers
+[the release workflow](.github/workflows/release.yml). It runs `make setup`,
+`make check`, and `make build` on the tagged source with CGO disabled, then
+publishes `calculator-linux-amd64.tar.gz` to
+[GitHub Releases](https://github.com/make-no-mistakes-team/super-duper-calculator/releases).
+Publication requires successful checks, build, and packaging. Branch pushes
+and pull requests do not publish releases.
+
+The archive contains only the Linux/amd64 executable and its adjacent `web`
+assets. It contains no `.env`, credentials, database, personal history, or
+Node.js helper. Download the runnable archive rather than GitHub's automatic
+source archives, then extract it into an empty directory:
+
+```sh
+mkdir calculator-release
+tar -xzf calculator-linux-amd64.tar.gz -C calculator-release
+cd calculator-release
+HTTP_ADDR=127.0.0.1:8088 DATABASE_PATH="$PWD/state/calculator.sqlite" ./calculator
+```
+
+Open <http://127.0.0.1:8088>. The application creates its own private database.
+Restart with the same database path and browser identity to retain personal
+history. Node.js, Go, and development dependencies are not needed at runtime.
+
+For a local archive on another OS or CPU architecture, build on the target
+device and package the same two outputs:
+
+```sh
+make setup
+make check
+make build
+tar -czf calculator-local.tar.gz -C bin calculator web
+```
+
+Keep the executable and `web` directory together when copying or extracting
+them. Rehearse the exact artifact on the presentation device without external
+network access. See [Demo & Operations](specs/demo-and-operations.md) for the
+browser sequence, restart/history checks, and recovery procedure, and the
+[release policy](PLAN.md#release-policy) for publication rules.
 
 ## Repository map
 

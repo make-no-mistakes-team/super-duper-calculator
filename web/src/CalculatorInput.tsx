@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import type { AngleUnit, Capabilities } from './contracts';
 
-type Tool = 'functions' | 'keypad' | 'history';
+type Tool = 'functions' | 'keypad' | 'history' | 'settings';
 
 type CalculatorInputProps = {
   expression: string;
@@ -13,6 +13,7 @@ type CalculatorInputProps = {
   onAngleUnitChange: (angleUnit: AngleUnit) => void;
   onSubmit: () => void;
   history: ReactNode;
+  settings: ReactNode;
   children: ReactNode;
 };
 
@@ -32,12 +33,12 @@ const functions = [
   { name: 'log', label: 'Логарифм log', example: 'log(8, 2)' },
   { name: 'exp', label: 'Экспонента', example: 'exp(2)' },
 ];
-const toolLabels: Record<Tool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История' };
+const toolLabels: Record<Tool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История', settings: 'Настройки' };
 const tools: Tool[] = ['functions', 'keypad', 'history'];
 
 export function CalculatorInput({
   expression, angleUnit, capabilities, activeTool, onToolChange,
-  onExpressionChange, onAngleUnitChange, onSubmit, history, children,
+  onExpressionChange, onAngleUnitChange, onSubmit, history, settings, children,
 }: CalculatorInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
@@ -111,7 +112,10 @@ export function CalculatorInput({
 
   return (
     <div className="console-layout" data-tool-open={activeTool !== null} onKeyDown={(event) => {
-      if (event.key === 'Escape' && activeTool !== null) { event.preventDefault(); closeTool(); }
+      if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && activeTool !== null) {
+        event.preventDefault();
+        closeTool();
+      }
     }}>
       <div className="editor-stack">
         <section className="editor-console" aria-label="Калькулятор">
@@ -174,6 +178,7 @@ export function CalculatorInput({
         </div>
         <div className="tool-bay-body" ref={toolBodyRef} key={activeTool}>
           {activeTool === 'history' && history}
+          {activeTool === 'settings' && settings}
           {activeTool === 'keypad' && <>
             <div className="calculator-keys" aria-label="Кнопки калькулятора">{arithmeticKeys.map(renderKey)}</div>
             <div className="keypad-actions">
