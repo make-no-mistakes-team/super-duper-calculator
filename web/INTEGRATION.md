@@ -6,6 +6,10 @@ props. `History` receives records, paging state, and callbacks; selecting a
 record restores only the editor and angle unit. It does not submit or replace
 the last submitted outcome.
 
+`App` also owns the active tool selection. `CalculatorInput` renders the
+functions/keypad/history bay, docks it on desktop, and presents it as a phone
+sheet. It handles dismissal and focus when the sheet closes.
+
 All HTTP requests go through `src/api.ts`. Its relative `/api/...` paths keep
 the browser on the page origin and send the anonymous session cookie. Go owns
 calculation, durable records, and capability flags. Feature components should

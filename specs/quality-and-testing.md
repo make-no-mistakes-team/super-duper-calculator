@@ -118,14 +118,18 @@ Exercise the actual application with keyboard and touch:
 4. Restore an expression and calculate again with the correct context.
 5. Observe behavior when the service becomes unavailable.
 6. Deliver responses out of order and confirm a stale result cannot take over.
+7. Open, switch, and close the tool bay without losing editor or result state.
+8. Submit from the phone keypad; confirm the sheet closes and focus remains on
+   an available control.
+9. Insert a function around selected text and check the caret and expression.
 
 Use browser automation for critical flows and inspect the actual interface for
 layout, motion, and interaction changes.
 
 ## Optional presentation checks
 
-For themes and minimal mode, switch while editor, result, and history state
-exists. Verify state preservation, readable errors, focus, and phone layout.
+For themes, switch while editor, result, and history state exists. Verify state
+preservation, readable errors, focus, and phone layout.
 
 For localization:
 

@@ -34,7 +34,7 @@ presentation and audience experience.
 
 ### Required core
 
-- A web client with an editable expression and a hybrid calculator interface.
+- A typing-first web client with an editable expression and on-demand keypad.
 - Server-side scientific calculation.
 - The mathematical baseline in [Calculation Engine](specs/calculation-engine.md).
 - Clear syntax, domain, numerical, and service errors.
@@ -57,10 +57,9 @@ These are optional for course compliance but central to the intended product:
 - a small escalating usage gag and one reversible theatrical incident;
 - compact statistics derived from real calculation records;
 - switchable visual themes;
-- a minimal presentation mode alongside the default hybrid layout;
 - Russian/English localization with a language selector.
 
-Themes, layout density, and effect settings are independent. None changes the
+Themes and effect settings are independent. Neither changes the
 supported mathematics or silently changes whether a calculation is public.
 Exact colors, typography, and component composition remain design decisions.
 
@@ -133,8 +132,8 @@ different mathematical, publication, or localization semantics.
 
 ## Default user experience
 
-The ordinary URL opens a private calculator in Russian, using degrees and the
-hybrid presentation. A returning browser restores its saved preferences.
+The ordinary URL opens a private calculator in Russian, using degrees.
+A returning browser restores its saved preferences.
 
 The user can type or paste an expression, calculate, read the outcome, and reuse
 history without encountering a joke or animation that requires interaction.
