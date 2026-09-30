@@ -172,12 +172,13 @@ type RoomJoinResponse struct {
 }
 
 type RoomReactionResponse struct {
-	EventID        string         `json:"eventId"`
-	ReactionID     *string        `json:"reactionId"`
-	Reactions      map[string]int `json:"reactions"`
-	AchievementIDs []string       `json:"achievementIds"`
-	Epoch          string         `json:"epoch"`
-	Sequence       int64          `json:"sequence"`
+	EventID        string          `json:"eventId"`
+	Participant    RoomParticipant `json:"participant"`
+	ReactionID     *string         `json:"reactionId"`
+	Reactions      map[string]int  `json:"reactions"`
+	AchievementIDs []string        `json:"achievementIds"`
+	Epoch          string          `json:"epoch"`
+	Sequence       int64           `json:"sequence"`
 }
 
 type CalculationResponse struct {

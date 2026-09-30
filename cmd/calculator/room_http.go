@@ -57,7 +57,7 @@ func (a api) joinRoom(w http.ResponseWriter, r *http.Request) {
 	if !roomJSONRequest(w, r, &input) {
 		return
 	}
-	joined, err := a.rooms.join(owner)
+	joined, err := a.rooms.joinWithContext(r.Context(), owner)
 	if err != nil {
 		if errors.Is(err, errRoomViewLimit) {
 			w.Header().Set("Retry-After", "1")

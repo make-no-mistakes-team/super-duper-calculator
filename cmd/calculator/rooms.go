@@ -54,9 +54,10 @@ type roomMessage struct {
 }
 
 type roomView struct {
-	owner     string
-	expiresAt time.Time
-	stream    chan roomMessage
+	owner       string
+	participant contracts.RoomParticipant
+	expiresAt   time.Time
+	stream      chan roomMessage
 }
 
 type roomQuota struct {
@@ -111,6 +112,9 @@ func newRoomService(ctx context.Context, db *sql.DB, config roomConfig) (*roomSe
 		if _, err := db.ExecContext(ctx, `DELETE FROM room_answer_42 WHERE room_code = ?`, config.Code); err != nil {
 			return nil, err
 		}
+	}
+	if err := reconcileRoomParticipants(ctx, db, config.Code); err != nil {
+		return nil, err
 	}
 	if err := s.load(ctx); err != nil {
 		return nil, err
@@ -218,7 +222,7 @@ func (s *roomService) load(ctx context.Context) error {
 
 func (s *roomService) validCode(code string) bool { return code == s.config.Code }
 
-func (s *roomService) snapshotLocked(owner string) contracts.RoomSnapshot {
+func (s *roomService) snapshotLocked(owner string, participant contracts.RoomParticipant) contracts.RoomSnapshot {
 	s.expireViewsLocked()
 	events := make([]contracts.RoomCalculationEvent, 0, len(s.events))
 	myReactions := make(map[string]string)
@@ -234,7 +238,7 @@ func (s *roomService) snapshotLocked(owner string) contracts.RoomSnapshot {
 	return contracts.RoomSnapshot{
 		Code: s.config.Code, Epoch: s.epoch, Sequence: s.seq,
 		PublicationEnabled: s.config.PublicationEnabled,
-		Participant:        roomParticipant(owner, s.config.Code),
+		Participant:        participant,
 		Presence:           s.presenceLocked(), Calculations: events, MyReactions: myReactions,
 		Aggregates: contracts.RoomAggregates{
 			PublishedCalculations: s.publishedCount, ActiveReactions: s.reactionCount,
@@ -278,6 +282,10 @@ func (s *roomService) expireViewsLocked() {
 }
 
 func (s *roomService) join(owner string) (contracts.RoomJoinResponse, error) {
+	return s.joinWithContext(context.Background(), owner)
+}
+
+func (s *roomService) joinWithContext(ctx context.Context, owner string) (contracts.RoomJoinResponse, error) {
 	viewID, err := randomID(16)
 	if err != nil {
 		return contracts.RoomJoinResponse{}, err
@@ -288,12 +296,16 @@ func (s *roomService) join(owner string) (contracts.RoomJoinResponse, error) {
 	if len(s.views) >= 256 {
 		return contracts.RoomJoinResponse{}, errRoomViewLimit
 	}
+	participant, err := ensureRoomParticipant(ctx, s.db, s.config.Code, owner)
+	if err != nil {
+		return contracts.RoomJoinResponse{}, err
+	}
 	old := s.presenceLocked()
-	s.views[viewID] = &roomView{owner: owner, expiresAt: s.now().Add(roomViewTTL)}
+	s.views[viewID] = &roomView{owner: owner, participant: participant, expiresAt: s.now().Add(roomViewTTL)}
 	if s.presenceLocked() != old {
 		s.broadcastLocked("presence", map[string]int{"participants": s.presenceLocked()})
 	}
-	return contracts.RoomJoinResponse{ViewID: viewID, Snapshot: s.snapshotLocked(owner)}, nil
+	return contracts.RoomJoinResponse{ViewID: viewID, Snapshot: s.snapshotLocked(owner, participant)}, nil
 }
 
 func spendQuota(quota *roomQuota, now time.Time, rate, capacity float64) bool {
@@ -401,7 +413,7 @@ func (s *roomService) subscribe(owner, viewID, lastID string) (chan roomMessage,
 			}
 		}
 	} else {
-		snapshot := s.snapshotLocked(owner)
+		snapshot := s.snapshotLocked(owner, view.participant)
 		data, _ := json.Marshal(snapshot)
 		initial = []roomMessage{{id: fmt.Sprintf("%s:%d", s.epoch, s.seq), kind: "snapshot", data: data}}
 	}

@@ -23,7 +23,10 @@ func (s *roomService) publish(ctx context.Context, owner string, record contract
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	when := s.now().UTC()
-	participant := roomParticipant(owner, s.config.Code)
+	participant, err := ensureRoomParticipant(ctx, s.db, s.config.Code, owner)
+	if err != nil {
+		return "", err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -57,7 +60,7 @@ func (s *roomService) publish(ctx context.Context, owner string, record contract
 	}
 	var roomEvents []contracts.FunEvent
 	if s.config.EffectsEnabled && record.Outcome.Value == "42" {
-		roomEvents, err = s.claimSharedAnswer(ctx, tx, owner, when)
+		roomEvents, err = s.claimSharedAnswer(ctx, tx, owner, participant, when)
 		if err != nil {
 			return "", err
 		}
@@ -91,7 +94,7 @@ func (s *roomService) publish(ctx context.Context, owner string, record contract
 
 // claimSharedAnswer runs inside the same transaction as the triggering public
 // event. Only the latest published 42 per identity is needed for this window.
-func (s *roomService) claimSharedAnswer(ctx context.Context, tx *sql.Tx, owner string, when time.Time) ([]contracts.FunEvent, error) {
+func (s *roomService) claimSharedAnswer(ctx context.Context, tx *sql.Tx, owner string, trigger contracts.RoomParticipant, when time.Time) ([]contracts.FunEvent, error) {
 	ns := when.UnixNano()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO room_answer_42 (room_code, session_id, last_at_ns)
 		VALUES (?, ?, ?) ON CONFLICT (room_code, session_id) DO UPDATE SET last_at_ns = excluded.last_at_ns`,
@@ -117,6 +120,32 @@ func (s *roomService) claimSharedAnswer(ctx context.Context, tx *sql.Tx, owner s
 	if err == nil && ns-last < int64(120*time.Second) {
 		return nil, nil
 	}
+	contributors := []contracts.RoomParticipant{trigger}
+	rows, err := tx.QueryContext(ctx, `SELECT p.public_id, p.alias FROM room_answer_42 a
+		JOIN room_participants p ON p.room_code = a.room_code AND p.session_id = a.session_id
+		WHERE a.room_code = ? AND a.session_id <> ?
+		ORDER BY a.last_at_ns DESC, a.session_id LIMIT 2`, s.config.Code, owner)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var participant contracts.RoomParticipant
+		if err := rows.Scan(&participant.ID, &participant.Alias); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		contributors = append(contributors, participant)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(contributors) != 3 {
+		return nil, errors.New("shared answer participants unavailable")
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO room_effect_state (room_code, last_scene_at_ns) VALUES (?, ?)
 		ON CONFLICT (room_code) DO UPDATE SET last_scene_at_ns = excluded.last_scene_at_ns`, s.config.Code, ns); err != nil {
 		return nil, err
@@ -127,7 +156,8 @@ func (s *roomService) claimSharedAnswer(ctx context.Context, tx *sql.Tx, owner s
 	}
 	return []contracts.FunEvent{{
 		ID: id, RuleID: "shared_answer", Kind: "scene", Scope: "room",
-		Params: map[string]any{}, CreatedAt: when, ExpiresAt: when.Add(10 * time.Second),
+		Params:    map[string]any{"triggeredBy": trigger, "contributors": contributors},
+		CreatedAt: when, ExpiresAt: when.Add(10 * time.Second),
 	}}, nil
 }
 
@@ -153,9 +183,13 @@ func (s *roomService) react(ctx context.Context, owner, eventID string, selected
 	if event == nil {
 		return contracts.RoomReactionResponse{}, errRoomEventNotFound
 	}
+	actor, err := ensureRoomParticipant(ctx, s.db, s.config.Code, owner)
+	if err != nil {
+		return contracts.RoomReactionResponse{}, err
+	}
 	old, hasOld := event.reactions[owner]
 	if selected == nil && !hasOld || selected != nil && hasOld && old == *selected {
-		return s.reactionResponseLocked(event, selected), nil
+		return s.reactionResponseLocked(event, selected, actor), nil
 	}
 	if !hasOld && selected != nil && len(event.reactions) >= 256 {
 		return contracts.RoomReactionResponse{}, errRoomReactionLimit
@@ -219,24 +253,27 @@ func (s *roomService) react(ctx context.Context, owner, eventID string, selected
 				when := s.now().UTC()
 				funEvents = []contracts.FunEvent{{
 					ID: id, RuleID: "peer_reviewed", Kind: "comment", Scope: "room",
-					Params:    map[string]any{"eventId": eventID, "authorId": event.public.Participant.ID},
+					Params: map[string]any{
+						"eventId": eventID, "authorId": event.public.Participant.ID,
+						"author": event.public.Participant, "triggeredBy": actor,
+					},
 					CreatedAt: when, ExpiresAt: when.Add(10 * time.Second),
 				}}
 			}
 		}
 	}
 	s.broadcastLocked("reaction", map[string]any{
-		"eventId": eventID, "participantId": roomParticipant(owner, s.config.Code).ID,
+		"eventId": eventID, "participantId": actor.ID, "participant": actor,
 		"reactionId": selected, "reactions": event.public.Reactions,
 		"achievementIds": event.public.AchievementIDs, "funEvents": funEvents,
 		"aggregates": s.aggregatesLocked(),
 	})
-	return s.reactionResponseLocked(event, selected), nil
+	return s.reactionResponseLocked(event, selected, actor), nil
 }
 
-func (s *roomService) reactionResponseLocked(event *roomCalculation, selected *string) contracts.RoomReactionResponse {
+func (s *roomService) reactionResponseLocked(event *roomCalculation, selected *string, actor contracts.RoomParticipant) contracts.RoomReactionResponse {
 	return contracts.RoomReactionResponse{
-		EventID: event.public.ID, ReactionID: selected,
+		EventID: event.public.ID, Participant: actor, ReactionID: selected,
 		Reactions:      cloneReactionCounts(event.public.Reactions),
 		AchievementIDs: append([]string{}, event.public.AchievementIDs...),
 		Epoch:          s.epoch, Sequence: s.seq,
