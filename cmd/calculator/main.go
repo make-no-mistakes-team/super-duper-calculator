@@ -47,6 +47,12 @@ func run() (runErr error) {
 			return errors.New("invalid ACHIEVEMENTS_ENABLED")
 		}
 	}
+	roomSettings, err := roomSettingsFromEnvironment()
+	if err != nil {
+		return err
+	}
+	roomShutdown := make(chan struct{})
+	roomSettings.Shutdown = roomShutdown
 	openCtx, cancelOpen := context.WithTimeout(ctx, 10*time.Second)
 	db, err := storage.Open(openCtx, os.Getenv("DATABASE_PATH"))
 	cancelOpen()
@@ -64,7 +70,11 @@ func run() (runErr error) {
 		addr = "127.0.0.1:8080"
 	}
 
-	handler, err := withClient(newHandler(db, publicOrigin, statisticsEnabled, achievementsEnabled), os.Getenv("WEB_ASSETS_DIR"))
+	apiHandler, err := newHandlerWithRooms(db, publicOrigin, statisticsEnabled, achievementsEnabled, roomSettings)
+	if err != nil {
+		return errors.New("room startup failed")
+	}
+	handler, err := withClient(apiHandler, os.Getenv("WEB_ASSETS_DIR"))
 	if err != nil {
 		return err
 	}
@@ -98,8 +108,9 @@ func run() (runErr error) {
 	case <-ctx.Done():
 		stop()
 	}
+	close(roomShutdown)
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		_ = server.Close()
@@ -112,6 +123,31 @@ func run() (runErr error) {
 		return errors.New("HTTP serve failed")
 	}
 	return nil
+}
+
+func roomSettingsFromEnvironment() (roomConfig, error) {
+	config := roomConfig{Code: "demo", PublicationEnabled: true, ReactionsEnabled: true, EffectsEnabled: true}
+	if code := os.Getenv("ROOM_CODE"); code != "" {
+		config.Code = code
+	}
+	for _, setting := range []struct {
+		name  string
+		value *bool
+	}{
+		{"ROOMS_ENABLED", &config.Enabled},
+		{"ROOM_PUBLICATION_ENABLED", &config.PublicationEnabled},
+		{"ROOM_REACTIONS_ENABLED", &config.ReactionsEnabled},
+		{"ROOM_EFFECTS_ENABLED", &config.EffectsEnabled},
+	} {
+		if raw := os.Getenv(setting.name); raw != "" {
+			parsed, err := strconv.ParseBool(raw)
+			if err != nil {
+				return roomConfig{}, fmt.Errorf("invalid %s", setting.name)
+			}
+			*setting.value = parsed
+		}
+	}
+	return config, nil
 }
 
 func readiness(db *sql.DB) http.HandlerFunc {

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
@@ -30,13 +31,30 @@ type api struct {
 	statisticsEnabled bool
 	discoveries       *discoveryService
 	incidents         *incidentService
+	rooms             *roomService
+	actionLocks       *[256]sync.Mutex
 }
 
 var errSessionRequired = errors.New("session required")
 
 func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled, achievementsEnabled bool) http.Handler {
+	handler, err := newHandlerWithRooms(db, publicOrigin, statisticsEnabled, achievementsEnabled, roomConfig{})
+	if err != nil {
+		panic(err)
+	}
+	return handler
+}
+
+func newHandlerWithRooms(db *sql.DB, publicOrigin *url.URL, statisticsEnabled, achievementsEnabled bool, config roomConfig) (http.Handler, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rooms, err := newRoomService(ctx, db, config)
+	if err != nil {
+		return nil, err
+	}
 	a := api{db: db, engine: calculation.New(), publicOrigin: publicOrigin, statisticsEnabled: statisticsEnabled,
-		discoveries: newDiscoveryService(db, achievementsEnabled), incidents: newIncidentService(db, achievementsEnabled)}
+		discoveries: newDiscoveryService(db, achievementsEnabled), incidents: newIncidentService(db, achievementsEnabled),
+		rooms: rooms, actionLocks: new([256]sync.Mutex)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -49,13 +67,19 @@ func newHandler(db *sql.DB, publicOrigin *url.URL, statisticsEnabled, achievemen
 	apiMux.HandleFunc("POST /api/calculations", a.calculate)
 	apiMux.HandleFunc("GET /api/history", a.history)
 	apiMux.HandleFunc("GET /api/statistics", a.statistics)
+	if rooms != nil {
+		apiMux.HandleFunc("POST /api/rooms/{code}/join", a.joinRoom)
+		apiMux.HandleFunc("POST /api/rooms/{code}/leave", a.leaveRoom)
+		apiMux.HandleFunc("PUT /api/rooms/{code}/events/{eventId}/reaction", a.reactRoom)
+		mux.HandleFunc("GET /api/rooms/{code}/events", a.roomEvents)
+	}
 	apiMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		apiError(w, http.StatusNotFound, "NOT_FOUND")
 	})
 	guardedAPI := protectAPI(apiMux)
 	mux.Handle("/api", guardedAPI)
 	mux.Handle("/api/", guardedAPI)
-	return mux
+	return mux, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -131,7 +155,7 @@ func (a api) session(w http.ResponseWriter, r *http.Request) {
 
 func (a api) writeSession(w http.ResponseWriter, r *http.Request, owner string) {
 	identity := sha256.Sum256([]byte("calculator-public-identity:" + owner))
-	response := contracts.SessionResponse{Alias: "Гость", Identity: hex.EncodeToString(identity[:])}
+	response := contracts.SessionResponse{Alias: displayAlias(owner), Identity: hex.EncodeToString(identity[:])}
 	if a.discoveries != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		awards, catalog, err := a.discoveries.Collection(ctx, owner)
@@ -207,20 +231,36 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		identityError(w, err)
 		return
 	}
+	key := sha256.Sum256([]byte(owner + ":" + request.RequestID))
+	lock := &a.actionLocks[key[0]]
+	lock.Lock()
+	defer lock.Unlock()
 	previous, err := a.recordByAction(r, owner, request.RequestID)
 	switch {
 	case err == nil:
-		writeCalculation(w, previous, request, nil, nil)
+		meta, err := a.actionMeta(r.Context(), owner, request.RequestID)
+		if err != nil {
+			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+			return
+		}
+		if meta.status == "pending" {
+			meta = a.finishUnavailable(owner, request.RequestID, meta)
+		}
+		writeCalculation(w, previous, request, meta, nil, nil)
 		return
 	case !errors.Is(err, sql.ErrNoRows):
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 		return
 	}
 	if request.Room != nil {
-		// Rooms are not enabled. Still detect changed context on a previously
-		// accepted private action before rejecting a new unsupported action.
-		apiError(w, http.StatusBadRequest, "UNSUPPORTED_CONTEXT")
-		return
+		if a.rooms == nil {
+			apiError(w, http.StatusBadRequest, "UNSUPPORTED_CONTEXT")
+			return
+		}
+		if !a.rooms.validCode(request.Room.Code) {
+			apiError(w, http.StatusNotFound, "NOT_FOUND")
+			return
+		}
 	}
 	evaluation, err := a.engine.Evaluate(r.Context(), calculation.Input{Expression: request.Expression, AngleUnit: request.AngleUnit})
 	if errors.Is(err, calculation.ErrExpressionLimit) {
@@ -251,12 +291,22 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 		return
 	}
+	meta := roomActionMeta{status: "private"}
+	if request.Room != nil {
+		meta.roomCode = sql.NullString{String: request.Room.Code, Valid: true}
+		meta.publish = sql.NullBool{Bool: request.Room.Publish, Valid: true}
+		if request.Room.Publish && record.Outcome.Kind == contracts.OutcomeSuccess {
+			meta.status = "pending"
+		}
+	}
 	result, err := a.db.ExecContext(r.Context(), `
-		INSERT INTO calculations (id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO calculations (id, session_id, request_id, expression, angle_unit, semantics_version,
+			outcome_json, facts_json, created_at, room_code, room_publish, publication_status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (session_id, request_id) DO NOTHING`,
 		record.ID, owner, record.RequestID, record.Expression, record.Context.AngleUnit,
-		record.Context.SemanticsVersion, string(outcomeJSON), string(factsJSON), record.CreatedAt.Format(time.RFC3339Nano))
+		record.Context.SemanticsVersion, string(outcomeJSON), string(factsJSON), record.CreatedAt.Format(time.RFC3339Nano),
+		meta.roomCode, meta.publish, meta.status)
 	if err != nil {
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 		return
@@ -271,6 +321,19 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 			return
+		}
+		meta, err = a.actionMeta(r.Context(), owner, request.RequestID)
+		if err != nil {
+			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
+			return
+		}
+	} else if meta.status == "pending" {
+		publicID, publishErr := a.rooms.publish(r.Context(), owner, record)
+		if publishErr != nil {
+			meta = a.finishUnavailable(owner, request.RequestID, meta)
+		} else {
+			meta.status = "published"
+			meta.eventID = sql.NullString{String: publicID, Valid: true}
 		}
 	}
 	var achievements []contracts.Achievement
@@ -291,7 +354,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 			events = append(events, incidentEvents...)
 		}
 	}
-	writeCalculation(w, record, request, achievements, events)
+	writeCalculation(w, record, request, meta, achievements, events)
 }
 
 func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts.CalculationRecord, error) {
@@ -300,14 +363,49 @@ func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts
 		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID), nil, storage.StrictFacts)
 }
 
-func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest,
+type roomActionMeta struct {
+	roomCode sql.NullString
+	publish  sql.NullBool
+	status   string
+	eventID  sql.NullString
+}
+
+func (a api) actionMeta(ctx context.Context, owner, requestID string) (roomActionMeta, error) {
+	var meta roomActionMeta
+	err := a.db.QueryRowContext(ctx, `SELECT room_code, room_publish, publication_status, public_event_id
+		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID).
+		Scan(&meta.roomCode, &meta.publish, &meta.status, &meta.eventID)
+	return meta, err
+}
+
+func (a api) finishUnavailable(owner, requestID string, known roomActionMeta) roomActionMeta {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, _ = a.db.ExecContext(ctx, `UPDATE calculations SET publication_status = 'unavailable'
+		WHERE session_id = ? AND request_id = ? AND publication_status = 'pending'`, owner, requestID)
+	meta, err := a.actionMeta(ctx, owner, requestID)
+	if err == nil && meta.status != "pending" {
+		return meta
+	}
+	known.status = "unavailable"
+	return known
+}
+
+func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest, meta roomActionMeta,
 	achievements []contracts.Achievement, events []contracts.FunEvent) {
-	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit || request.Room != nil {
+	contextMatches := request.Room == nil && !meta.roomCode.Valid && !meta.publish.Valid ||
+		request.Room != nil && meta.roomCode.Valid && meta.publish.Valid &&
+			meta.roomCode.String == request.Room.Code && meta.publish.Bool == request.Room.Publish
+	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit || !contextMatches {
 		apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
 		return
 	}
+	publication := contracts.Publication{Status: meta.status}
+	if meta.eventID.Valid {
+		publication.EventID = meta.eventID.String
+	}
 	writeJSON(w, http.StatusOK, contracts.CalculationResponse{
-		Calculation: record, Publication: contracts.Publication{Status: "private"},
+		Calculation: record, Publication: publication,
 		Achievements: achievements, FunEvents: events,
 	})
 }

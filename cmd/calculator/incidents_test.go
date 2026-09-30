@@ -551,6 +551,16 @@ func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) 
 	}
 	// Reconstruct a populated v2 file by removing only later schema objects.
 	if _, err := db.ExecContext(t.Context(), `
+		DROP TABLE room_badges;
+		DROP TABLE room_reactions;
+		DROP TABLE room_answer_42;
+		DROP TABLE room_effect_state;
+		DROP TABLE room_events;
+		DROP TABLE room_counters;
+		ALTER TABLE calculations DROP COLUMN public_event_id;
+		ALTER TABLE calculations DROP COLUMN publication_status;
+		ALTER TABLE calculations DROP COLUMN room_publish;
+		ALTER TABLE calculations DROP COLUMN room_code;
 		DROP INDEX calculations_owner_effect_window;
 		DROP TABLE personal_effects;
 		DROP TABLE discovery_progress;
@@ -578,7 +588,7 @@ func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if version != 4 || actions != 3 || awards != 1 {
+	if version != 5 || actions != 3 || awards != 1 {
 		t.Fatalf("v2 migration lost history: version=%d actions=%d awards=%d", version, actions, awards)
 	}
 	third := saveDiscoveryAction(t, migrated, "owner", "third", "1/0", start.Add(3*time.Second))

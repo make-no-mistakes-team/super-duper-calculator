@@ -126,7 +126,58 @@ type CalculationRecord struct {
 }
 
 type Publication struct {
-	Status string `json:"status"`
+	Status  string `json:"status"`
+	EventID string `json:"eventId,omitempty"`
+}
+
+// Room types contain public data only. Private calculation and session IDs are
+// deliberately absent from the wire representation.
+type RoomParticipant struct {
+	ID    string `json:"id"`
+	Alias string `json:"alias"`
+}
+
+type RoomCalculationEvent struct {
+	ID             string          `json:"id"`
+	Order          int64           `json:"order"`
+	Participant    RoomParticipant `json:"participant"`
+	Expression     string          `json:"expression"`
+	Value          string          `json:"value"`
+	AngleUnit      AngleUnit       `json:"angleUnit"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	Reactions      map[string]int  `json:"reactions"`
+	AchievementIDs []string        `json:"achievementIds"`
+}
+
+type RoomSnapshot struct {
+	Code               string                 `json:"code"`
+	Epoch              string                 `json:"epoch"`
+	Sequence           int64                  `json:"sequence"`
+	PublicationEnabled bool                   `json:"publicationEnabled"`
+	Participant        RoomParticipant        `json:"participant"`
+	Presence           int                    `json:"presence"`
+	Aggregates         RoomAggregates         `json:"aggregates"`
+	Calculations       []RoomCalculationEvent `json:"calculations"`
+	MyReactions        map[string]string      `json:"myReactions"`
+}
+
+type RoomAggregates struct {
+	PublishedCalculations int64 `json:"publishedCalculations"`
+	ActiveReactions       int   `json:"activeReactions"`
+}
+
+type RoomJoinResponse struct {
+	ViewID   string       `json:"viewId"`
+	Snapshot RoomSnapshot `json:"snapshot"`
+}
+
+type RoomReactionResponse struct {
+	EventID        string         `json:"eventId"`
+	ReactionID     *string        `json:"reactionId"`
+	Reactions      map[string]int `json:"reactions"`
+	AchievementIDs []string       `json:"achievementIds"`
+	Epoch          string         `json:"epoch"`
+	Sequence       int64          `json:"sequence"`
 }
 
 type CalculationResponse struct {
