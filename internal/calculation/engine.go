@@ -102,6 +102,7 @@ func tokenize(expression string) ([]string, []int, *contracts.MathError) {
 
 	tokens := make([]string, 0, maxTokens)
 	starts := make([]int, 0, maxTokens)
+	var leadingUnknown *contracts.MathError
 	for i := 0; i < len(expression); {
 		start := i
 		b := expression[i]
@@ -183,10 +184,23 @@ func tokenize(expression string) ([]string, []int, *contracts.MathError) {
 					break scan
 				}
 			}
-			tokens = append(tokens, string(word))
+			name := string(word)
+			if len(tokens) == 0 {
+				if _, known := operators[name]; !known {
+					// A later square bracket must not hide the first invalid
+					// token in an expression that begins with an unknown name.
+					span := contracts.SourceSpan{Start: i, End: i + 1}
+					leadingUnknown = &contracts.MathError{Code: contracts.ErrorUnknownIdentifier,
+						Stage: contracts.StageParse, Params: map[string]any{"name": name}, Span: &span}
+				}
+			}
+			tokens = append(tokens, name)
 			i = j
 
 		default:
+			if leadingUnknown != nil && (b == '[' || b == ']') {
+				return nil, nil, leadingUnknown
+			}
 			if b < 0x80 {
 				return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
 					Params: map[string]any{"unexpected": expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}

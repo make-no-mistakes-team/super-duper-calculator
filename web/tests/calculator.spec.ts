@@ -67,6 +67,16 @@ test('syntax errors remain saved and correction returns focus to the offending e
   expect(repeated.calculation.outcome.error.code).toBe('SYNTAX_ERROR');
 });
 
+test('an unknown leading name is highlighted before a later square bracket', async ({ page }) => {
+  await openCalculator(page);
+  const malformed = 'asdasdfasdasfasfasfASFASFASFAFASFASFASFAFASFASFASFASFASFASFASFASFASFdf]asd]gla]hdgasd[gksdgdsgsd DeG';
+  const result = await calculate(page, malformed);
+  if (result.calculation.outcome.kind !== 'error') throw new Error('Expected a mathematical error');
+  expect(result.calculation.outcome.error.code).toBe('UNKNOWN_IDENTIFIER');
+  expect(result.calculation.outcome.error.span).toEqual({ start: 0, end: 1 });
+  await expect(page.locator('.result-highlight mark')).toHaveText('a');
+});
+
 test('copy uses the canonical binary64 value rather than the rounded display', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await openCalculator(page);

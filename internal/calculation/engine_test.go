@@ -129,6 +129,34 @@ func TestArithmeticErrors(t *testing.T) {
 	}
 }
 
+func TestMalformedLeadingIdentifierPointsAtStart(t *testing.T) {
+	for _, tc := range []struct {
+		expression string
+		span       contracts.SourceSpan
+	}{
+		{"a]", contracts.SourceSpan{Start: 0, End: 1}},
+		{"  a]", contracts.SourceSpan{Start: 2, End: 3}},
+		{"asdasdfasdasfasfasfASFASFASFAFASFASFASFAFASFASFASFASFASFASFASFASFASFdf]asd]gla]hdgasd[gksdgdsgsd DeG",
+			contracts.SourceSpan{Start: 0, End: 1}},
+	} {
+		outcome := evaluate(t, tc.expression).Outcome
+		if outcome.Kind != contracts.OutcomeError || outcome.Error == nil || outcome.Error.Code != contracts.ErrorUnknownIdentifier ||
+			outcome.Error.Stage != contracts.StageParse || outcome.Error.Span == nil || *outcome.Error.Span != tc.span {
+			if outcome.Error == nil {
+				t.Errorf("%q: outcome = %+v, want unknown identifier at %v", tc.expression, outcome, tc.span)
+			} else {
+				t.Errorf("%q: code=%s params=%v span=%v, want unknown identifier at %v", tc.expression,
+					outcome.Error.Code, outcome.Error.Params, outcome.Error.Span, tc.span)
+			}
+		}
+	}
+	known := evaluate(t, "sin]").Outcome.Error
+	if known == nil || known.Code != contracts.ErrorSyntax || known.Span == nil ||
+		*known.Span != (contracts.SourceSpan{Start: 3, End: 4}) {
+		t.Errorf("known function followed by ] = %+v, want syntax error at ]", known)
+	}
+}
+
 func TestFacts(t *testing.T) {
 	for _, tc := range []struct {
 		expression string
