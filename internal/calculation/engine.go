@@ -55,124 +55,124 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 		unit = contracts.Degrees
 	case contracts.Degrees, contracts.Radians:
 	default:
-		return Evaluation{Outcome: contracts.Outcome{Kind: "error", Error: &contracts.MathError{
-			Code: "UNSUPPORTED_FEATURE", Stage: "evaluate", Params: map[string]any{"angleUnit": string(unit)}}}}, nil
+		return Evaluation{Outcome: contracts.Outcome{Kind: contracts.OutcomeError, Error: &contracts.MathError{
+			Code: contracts.ErrorUnsupportedFeature, Stage: contracts.StageEvaluate, Params: map[string]any{"angleUnit": string(unit)}}}}, nil
 	}
 
 	// Facts exist only for parsed expressions; an evaluation error keeps them.
 	facts := &contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{}}
 	tokens, starts, merr := tokenize(in.Expression)
-	var expr Expr
+	var expr expr
 	if merr == nil {
 		expr, merr = parse(tokens, starts, unit, facts)
 	}
 	if merr != nil {
-		if merr.Code == "EXPRESSION_LIMIT" {
+		if merr.Code == contracts.ErrorExpressionLimit {
 			return Evaluation{}, ErrExpressionLimit
 		}
-		return Evaluation{Outcome: contracts.Outcome{Kind: "error", Error: merr}}, nil
+		return Evaluation{Outcome: contracts.Outcome{Kind: contracts.OutcomeError, Error: merr}}, nil
 	}
 
 	v, merr := expr()
 	if merr != nil {
-		return Evaluation{Outcome: contracts.Outcome{Kind: "error", Error: merr}, Facts: facts}, nil
+		return Evaluation{Outcome: contracts.Outcome{Kind: contracts.OutcomeError, Error: merr}, Facts: facts}, nil
 	}
 	if v == 0 {
 		v = 0 // -0 -> 0
 	}
 	return Evaluation{Outcome: contracts.Outcome{
-		Kind:  "success",
+		Kind:  contracts.OutcomeSuccess,
 		Value: strconv.FormatFloat(v, 'g', -1, 64),
 	}, Facts: facts}, nil
 }
 
-// tokenize splits Expression into numbers ("12", ".5", "1.25e-3"), names,
+// tokenize splits expression into numbers ("12", ".5", "1.25e-3"), names,
 // operators, parentheses and commas. Tokens are lowercase ("1E5" -> "1e5",
 // "SIN" -> "sin"). Unary signs stay separate tokens: -2^2 is "-" "2" "^" "2".
 // starts[k] is the byte offset of tokens[k]. Only ASCII is accepted.
-func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
+func tokenize(expression string) ([]string, []int, *contracts.MathError) {
 	length := 0
-	for _, r := range Expression {
+	for _, r := range expression {
 		length += utf16.RuneLen(r)
 		if length > maxLength {
-			return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
+			return nil, nil, &contracts.MathError{Code: contracts.ErrorExpressionLimit, Stage: contracts.StageParse,
 				Params: map[string]any{"length": maxLength}}
 		}
 	}
 
 	tokens := make([]string, 0, maxTokens)
 	starts := make([]int, 0, maxTokens)
-	for i := 0; i < len(Expression); {
+	for i := 0; i < len(expression); {
 		start := i
-		b := Expression[i]
+		b := expression[i]
 		switch {
 		case b == ' ', b == '\t', b == '\n', b == '\r':
 			i++
 
 		case b == '+', b == '-', b == '*', b == '/', b == '^', b == '(', b == ')', b == ',', b == '!', b == '%':
-			tokens = append(tokens, Expression[i:i+1])
+			tokens = append(tokens, expression[i:i+1])
 			i++
 
 		case b >= '0' && b <= '9', b == '.':
 			j := i
 			digits := 0
-			for j < len(Expression) && Expression[j] >= '0' && Expression[j] <= '9' {
+			for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
 				j++
 				digits++
 			}
-			if j < len(Expression) && Expression[j] == '.' {
+			if j < len(expression) && expression[j] == '.' {
 				j++
-				for j < len(Expression) && Expression[j] >= '0' && Expression[j] <= '9' {
+				for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
 					j++
 					digits++
 				}
 			}
 			if digits == 0 {
-				return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
+				return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
 					Params: map[string]any{"expected": "digit"}, Span: &contracts.SourceSpan{Start: i, End: j}}
 			}
 
-			if j < len(Expression) {
-				switch Expression[j] {
+			if j < len(expression) {
+				switch expression[j] {
 				case 'E':
 					fallthrough
 				case 'e':
 					e := j
 					j++
-					if j < len(Expression) && (Expression[j] == '+' || Expression[j] == '-') {
+					if j < len(expression) && (expression[j] == '+' || expression[j] == '-') {
 						j++
 					}
 					start := j
-					for j < len(Expression) && Expression[j] >= '0' && Expression[j] <= '9' {
+					for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
 						j++
 					}
 					if j == start {
-						return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
+						return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
 							Params: map[string]any{"expected": "exponent"}, Span: &contracts.SourceSpan{Start: e, End: j}}
 					}
 				}
 			}
 
 			// 1.2.3, 1e5e3 and 2pi (no implicit multiplication) end up here.
-			if j < len(Expression) {
-				switch c := Expression[j]; {
+			if j < len(expression) {
+				switch c := expression[j]; {
 				case c >= 'A' && c <= 'Z':
 					fallthrough
 				case c >= 'a' && c <= 'z', c == '.':
-					return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
+					return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
 						Params: map[string]any{"unexpected": string(c)}, Span: &contracts.SourceSpan{Start: j, End: j + 1}}
 				}
 			}
 
-			tokens = append(tokens, strings.ToLower(Expression[i:j]))
+			tokens = append(tokens, strings.ToLower(expression[i:j]))
 			i = j
 
 		case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z':
 			word := make([]byte, 0, 8)
 			j := i
 		scan:
-			for ; j < len(Expression); j++ {
-				c := Expression[j]
+			for ; j < len(expression); j++ {
+				c := expression[j]
 				switch {
 				case c >= 'A' && c <= 'Z':
 					c |= 0x20
@@ -188,27 +188,27 @@ func tokenize(Expression string) ([]string, []int, *contracts.MathError) {
 
 		default:
 			if b < 0x80 {
-				return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
-					Params: map[string]any{"unexpected": Expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
+				return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
+					Params: map[string]any{"unexpected": expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
 			}
-			r, _ := utf8.DecodeRuneInString(Expression[i:])
-			return nil, nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse",
+			r, _ := utf8.DecodeRuneInString(expression[i:])
+			return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
 				Params: map[string]any{"unexpected": string(r)}, Span: &contracts.SourceSpan{Start: i, End: i + utf16.RuneLen(r)}}
 		}
 		if len(starts) < len(tokens) {
 			starts = append(starts, start)
 		}
 		if len(tokens) > maxTokens {
-			return nil, nil, &contracts.MathError{Code: "EXPRESSION_LIMIT", Stage: "parse",
+			return nil, nil, &contracts.MathError{Code: contracts.ErrorExpressionLimit, Stage: contracts.StageParse,
 				Params: map[string]any{"tokens": maxTokens}}
 		}
 	}
 	return tokens, starts, nil
 }
 
-// Expr is a parsed expression: numbers and operations alike are functions,
-// an operation calls the Exprs of its operands.
-type Expr func() (float64, *contracts.MathError)
+// expr is a parsed expression: numbers and operations alike are functions,
+// an operation calls the expressions of its operands.
+type expr func() (float64, *contracts.MathError)
 
 // operator describes one entry of the operators table.
 type operator struct {
@@ -223,7 +223,7 @@ type operator struct {
 // reduceDegrees splits x degrees into quarter turns n (0..3) and a remainder
 // y in radians within ±45°. The split happens in degrees, where it is exact,
 // so only y goes through the inexact pi/180: sin 180 is exactly 0.
-var reduceDegrees = func(x float64) (float64, int) {
+func reduceDegrees(x float64) (float64, int) {
 	r := math.Mod(x, 360)
 	n := math.RoundToEven(r / 90)                 // 45 stays in quarter 0: tan 45 is tan(pi/4)
 	return (r - 90*n) * math.Pi / 180, int(n) & 3 // -90 is the same as 270
@@ -231,7 +231,7 @@ var reduceDegrees = func(x float64) (float64, int) {
 
 func remainder(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 	if x[1] == 0 {
-		return 0, &contracts.MathError{Code: "DIVISION_BY_ZERO", Stage: "evaluate", Params: map[string]any{}}
+		return 0, &contracts.MathError{Code: contracts.ErrorDivisionByZero, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 	}
 	return math.Mod(x[0], x[1]), nil
 }
@@ -249,7 +249,7 @@ var operators = map[string]operator{
 	"*": {prec: 2, arity: 2, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) { return x[0] * x[1], nil }},
 	"/": {prec: 2, arity: 2, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		if x[1] == 0 {
-			return 0, &contracts.MathError{Code: "DIVISION_BY_ZERO", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDivisionByZero, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return x[0] / x[1], nil
 	}},
@@ -257,17 +257,17 @@ var operators = map[string]operator{
 	"u-": {prec: 3, arity: 1, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) { return -x[0], nil }},
 	"^": {prec: 4, right: true, arity: 2, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		if x[0] == 0 && x[1] < 0 {
-			return 0, &contracts.MathError{Code: "DIVISION_BY_ZERO", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDivisionByZero, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return math.Pow(x[0], x[1]), nil // (-8)^(1/3) is NaN -> DOMAIN_ERROR
 	}},
 	"!": {prec: 5, arity: 1, postfix: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		n := x[0]
 		if n < 0 || math.Trunc(n) != n {
-			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		if n > 170 {
-			return 0, &contracts.MathError{Code: "NUMERIC_OVERFLOW", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorNumericOverflow, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		result := 1.0
 		for i := 2; i <= int(n); i++ {
@@ -290,19 +290,19 @@ var operators = map[string]operator{
 	"exp":  {prec: 3, arity: 1, fn: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) { return math.Exp(x[0]), nil }},
 	"ln": {prec: 3, arity: 1, fn: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		if x[0] <= 0 { // ln(0) is -Inf, not an overflow
-			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return math.Log(x[0]), nil
 	}},
 	"log": {prec: 3, arity: 1, fn: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		if x[0] <= 0 {
-			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return math.Log10(x[0]), nil
 	}},
 	"log,": {prec: 3, arity: 2, fn: true, apply: func(x []float64, _ contracts.AngleUnit) (float64, *contracts.MathError) {
 		if x[0] <= 0 || x[1] <= 0 || x[1] == 1 { // log(x, base)
-			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return math.Log(x[0]) / math.Log(x[1]), nil
 	}},
@@ -331,13 +331,13 @@ var operators = map[string]operator{
 			case n&1 == 0:
 				return math.Tan(y), nil
 			case y == 0: // odd multiples of 90
-				return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+				return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 			}
 			return -1 / math.Tan(y), nil
 		}
 		if q := (x[0] - math.Pi/2) / math.Pi; math.Abs(q) < 1<<52 && q == math.Round(q) {
 			// above 2^52 every float is an integer, and pi multiples are meaningless
-			return 0, &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+			return 0, &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 		}
 		return math.Tan(x[0]), nil
 	}},
@@ -361,15 +361,15 @@ var operators = map[string]operator{
 	}},
 }
 
-// parse builds an Expr from tokenize output with the shunting-yard algorithm:
+// parse builds an expr from tokenize output with the shunting-yard algorithm:
 // instead of writing postfix notation, every operator popped from the stack
-// takes its operands from the operand stack and pushes back one Expr.
+// takes its operands from the operand stack and pushes back one expr.
 // Every binary operator and function call is one operation recorded in facts;
 // facts.Depth is the deepest parenthesis nesting. Every operand carries the
 // span of its source text, evaluation errors point at the failed operation.
-func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contracts.CalculationFacts) (Expr, *contracts.MathError) {
+func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contracts.CalculationFacts) (expr, *contracts.MathError) {
 	type operand struct {
-		expr Expr
+		expr expr
 		span contracts.SourceSpan
 	}
 	type pending struct {
@@ -381,8 +381,8 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 	depth := 0
 	expectOperand := true
 
-	fail := func(code string, span contracts.SourceSpan, params map[string]any) *contracts.MathError {
-		return &contracts.MathError{Code: code, Stage: "parse", Params: params, Span: &span}
+	fail := func(code contracts.MathErrorCode, span contracts.SourceSpan, params map[string]any) *contracts.MathError {
+		return &contracts.MathError{Code: code, Stage: contracts.StageParse, Params: params, Span: &span}
 	}
 	end := 0 // offset after the last token: "5*(" fails at {3, 3}
 	if len(tokens) > 0 {
@@ -402,7 +402,7 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			facts.OperationCount++
 		}
 		if len(operands) < o.arity {
-			return &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse", Params: map[string]any{"expected": "operand"}}
+			return &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse, Params: map[string]any{"expected": "operand"}}
 		}
 		args := append([]operand(nil), operands[len(operands)-o.arity:]...)
 		operands = operands[:len(operands)-o.arity]
@@ -431,9 +431,9 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			switch {
 			case merr != nil:
 			case math.IsNaN(v):
-				merr = &contracts.MathError{Code: "DOMAIN_ERROR", Stage: "evaluate", Params: map[string]any{}}
+				merr = &contracts.MathError{Code: contracts.ErrorDomain, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 			case math.IsInf(v, 0):
-				merr = &contracts.MathError{Code: "NUMERIC_OVERFLOW", Stage: "evaluate", Params: map[string]any{}}
+				merr = &contracts.MathError{Code: contracts.ErrorNumericOverflow, Stage: contracts.StageEvaluate, Params: map[string]any{}}
 			default:
 				return v, nil
 			}
@@ -451,10 +451,10 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		switch c := t[0]; {
 		case t == "(":
 			if !expectOperand { // 2(3), (1)(2)
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operator"})
 			}
 			if depth++; depth > maxNesting {
-				return nil, fail("EXPRESSION_LIMIT", at, map[string]any{"depth": maxNesting})
+				return nil, fail(contracts.ErrorExpressionLimit, at, map[string]any{"depth": maxNesting})
 			}
 			facts.Depth = max(facts.Depth, depth)
 			ops = append(ops, pending{key: "(", at: k})
@@ -463,9 +463,9 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			if expectOperand { // (), 2+)
 				if len(ops) >= 2 && ops[len(ops)-1].key == "(" &&
 					(ops[len(ops)-2].key == "mod" || ops[len(ops)-2].key == "mod,") {
-					return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+					return nil, fail(contracts.ErrorWrongArity, at, map[string]any{"name": "mod"})
 				}
-				return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
+				return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
 			}
 			for len(ops) > 0 && ops[len(ops)-1].key != "(" {
 				if merr := reduce(); merr != nil {
@@ -473,10 +473,10 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 				}
 			}
 			if len(ops) == 0 {
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"unexpected": t})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"unexpected": t})
 			}
 			if len(ops) >= 2 && ops[len(ops)-2].key == "mod" {
-				return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+				return nil, fail(contracts.ErrorWrongArity, at, map[string]any{"name": "mod"})
 			}
 			operands[len(operands)-1].span = contracts.SourceSpan{Start: starts[ops[len(ops)-1].at], End: at.End}
 			ops = ops[:len(ops)-1]
@@ -503,9 +503,9 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		case t == ",":
 			if expectOperand { // log(, 2), log 8,,2
 				if len(ops) >= 2 && ops[len(ops)-1].key == "(" && ops[len(ops)-2].key == "mod" {
-					return nil, fail("WRONG_ARITY", at, map[string]any{"name": "mod"})
+					return nil, fail(contracts.ErrorWrongArity, at, map[string]any{"name": "mod"})
 				}
-				return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
+				return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: at.Start, End: at.Start}, map[string]any{"expected": "operand"})
 			}
 			// The comma belongs to the nearest function that takes another
 			// argument: log(sin(30), 2) and log 8*2, 2 finish sin(30) and 8*2
@@ -542,19 +542,19 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			}
 			switch {
 			case f < 0 && skipped != "": // sin(1, 2), log(8, 2, 3), sin 1, 2
-				return nil, fail("WRONG_ARITY", at, map[string]any{"name": strings.TrimSuffix(skipped, ",")})
+				return nil, fail(contracts.ErrorWrongArity, at, map[string]any{"name": strings.TrimSuffix(skipped, ",")})
 			case f < 0: // (8, 2), 1, 2
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"unexpected": t})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"unexpected": t})
 			}
 			ops[f].key += ","
 			expectOperand = true
 
 		case t == "!" || t == "%":
 			if expectOperand {
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operand"})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operand"})
 			}
 			if k > 0 && (tokens[k-1] == "!" || tokens[k-1] == "%") {
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operator"})
 			}
 			ops = append(ops, pending{key: t, at: k})
 			if merr := reduce(); merr != nil {
@@ -563,11 +563,11 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 
 		case c >= '0' && c <= '9', c == '.':
 			if !expectOperand { // 1 2
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operator"})
 			}
 			v, err := strconv.ParseFloat(t, 64)
 			if err != nil { // 1e400
-				return nil, fail("NUMERIC_OVERFLOW", at, map[string]any{"literal": t})
+				return nil, fail(contracts.ErrorNumericOverflow, at, map[string]any{"literal": t})
 			}
 			operands = append(operands, operand{span: at, expr: func() (float64, *contracts.MathError) { return v, nil }})
 			expectOperand = false
@@ -575,7 +575,7 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		case !expectOperand:
 			o, ok := operators[t]
 			if !ok || o.arity != 2 || o.fn { // 2+3 trailing, 2 sin 3
-				return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operator"})
+				return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operator"})
 			}
 			for len(ops) > 0 {
 				p := operators[ops[len(ops)-1].key].prec // 0 for "("
@@ -597,10 +597,10 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			if o, ok := operators[key]; ok && (o.fn || o.arity < 2) {
 				if t == "mod" && (k+1 == len(tokens) || tokens[k+1] != "(") {
 					if k+1 == len(tokens) {
-						return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: at.End, End: at.End}, map[string]any{"expected": "("})
+						return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: at.End, End: at.End}, map[string]any{"expected": "("})
 					}
 					next := contracts.SourceSpan{Start: starts[k+1], End: starts[k+1] + len(tokens[k+1])}
-					return nil, fail("SYNTAX_ERROR", next, map[string]any{"expected": "("})
+					return nil, fail(contracts.ErrorSyntax, next, map[string]any{"expected": "("})
 				}
 				ops = append(ops, pending{key: key, at: k}) // prefix: pushed without popping anything
 				if o.arity == 0 {                           // a constant is an operand at once
@@ -612,25 +612,25 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 				continue
 			}
 			if c >= 'a' && c <= 'z' {
-				return nil, fail("UNKNOWN_IDENTIFIER", at, map[string]any{"name": t})
+				return nil, fail(contracts.ErrorUnknownIdentifier, at, map[string]any{"name": t})
 			}
-			return nil, fail("SYNTAX_ERROR", at, map[string]any{"expected": "operand"}) // *2, 1+,5
+			return nil, fail(contracts.ErrorSyntax, at, map[string]any{"expected": "operand"}) // *2, 1+,5
 		}
 	}
 
 	if expectOperand { // "", 2+, -, sin
-		return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: end, End: end}, map[string]any{"expected": "operand"})
+		return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: end, End: end}, map[string]any{"expected": "operand"})
 	}
 	for len(ops) > 0 {
 		if ops[len(ops)-1].key == "(" {
-			return nil, fail("SYNTAX_ERROR", contracts.SourceSpan{Start: end, End: end}, map[string]any{"expected": ")"})
+			return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: end, End: end}, map[string]any{"expected": ")"})
 		}
 		if merr := reduce(); merr != nil {
 			return nil, merr
 		}
 	}
 	if len(operands) != 1 {
-		return nil, &contracts.MathError{Code: "SYNTAX_ERROR", Stage: "parse", Params: map[string]any{"expected": "operator"}}
+		return nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse, Params: map[string]any{"expected": "operator"}}
 	}
 	return operands[0].expr, nil
 }

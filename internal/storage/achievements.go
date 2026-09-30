@@ -12,31 +12,8 @@ import (
 
 var ErrUnknownAchievement = errors.New("unknown achievement")
 
-// GrantAchievements persists eligible IDs for an already committed, owned action.
-// It returns only new awards after commit. The first awarding action supplies
-// earnedAt; later actions and retries cannot replace it. Eligibility is decided
-// by discovery rules, not by this storage operation.
-func GrantAchievements(ctx context.Context, db *sql.DB, owner, calculationID string, ids []string) ([]contracts.Achievement, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	granted, err := grantAchievements(ctx, tx, owner, calculationID, ids)
-	if err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return granted, nil
-}
-
-// grantAchievements shares ownership, ID validation and first-award semantics
-// between direct grants and atomic discovery checkpoint commits.
+// grantAchievements validates ownership and IDs inside the atomic discovery
+// checkpoint transaction. First awards retain their original source and time.
 func grantAchievements(ctx context.Context, tx *sql.Tx, owner, calculationID string, ids []string) ([]contracts.Achievement, error) {
 	for _, id := range ids {
 		if !discovery.Known(id) {

@@ -11,7 +11,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build"
+    "build": "npm run typecheck && vite build",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@fontsource/golos-text": "5.3.0",
@@ -21,6 +22,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "24.13.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

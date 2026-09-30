@@ -348,7 +348,10 @@ func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
 	}
 	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	saveAwardAction(t, legacy, "owner", "legacy-source", when)
-	if _, err := storage.GrantAchievements(t.Context(), legacy, "owner", "legacy-source", []string{"six_seven"}); err != nil {
+	// This fixture predates discovery_progress; seed its original award directly.
+	if _, err := legacy.ExecContext(t.Context(), `
+		INSERT INTO achievements (session_id, achievement_id, calculation_id, earned_at)
+		VALUES ('owner', 'six_seven', 'legacy-source', ?)`, when.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := legacy.ExecContext(t.Context(), "PRAGMA user_version = 3"); err != nil {

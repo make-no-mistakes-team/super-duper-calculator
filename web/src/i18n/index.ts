@@ -8,4 +8,4 @@ export function getMessages(language: Language): Messages {
   return catalogs[language];
 }
 
-export type { Language, Messages } from './types';
+export type { CalculationMessages, HistoryMessages, Language, Messages } from './types';

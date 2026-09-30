@@ -9,6 +9,7 @@ import '@fontsource/tiny5/cyrillic-400.css';
 import '@fontsource/tiny5/latin-400.css';
 import '@fontsource/pt-mono/latin-400.css';
 import '@fontsource/pt-mono/cyrillic-400.css';
+import './themes.css';
 import './styles.css';
 
 const root = document.getElementById('root');

@@ -33,7 +33,7 @@ func saveDiscoveryAction(t *testing.T, db *sql.DB, owner, id, expression string,
 	}
 	record := contracts.CalculationRecord{
 		ID: id, RequestID: id, Expression: expression,
-		Context: contracts.CalculationContext{AngleUnit: contracts.Degrees, SemanticsVersion: semanticsVersion},
+		Context: contracts.CalculationContext{AngleUnit: contracts.Degrees, SemanticsVersion: calculation.SemanticsVersion},
 		Outcome: evaluation.Outcome, Facts: evaluation.Facts, CreatedAt: when.UTC(),
 	}
 	outcomeJSON, err := json.Marshal(record.Outcome)
@@ -67,10 +67,18 @@ func findDiscoveryAward(t *testing.T, awards []contracts.Achievement, id string)
 	return contracts.Achievement{}
 }
 
+func fixedDiscoveryService(db *sql.DB) *discoveryService {
+	service := newDiscoveryService(db, true)
+	service.now = func() time.Time {
+		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	}
+	return service
+}
+
 func TestDiscoveryServiceEightRealRulesAndComments(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	start := time.Now().UTC().Add(-2 * time.Second)
+	service := fixedDiscoveryService(db)
+	start := service.now().Add(-2 * time.Second)
 	expressions := []struct {
 		expression string
 		newAward   string
@@ -134,8 +142,8 @@ func TestDiscoveryServiceEightRealRulesAndComments(t *testing.T) {
 
 func TestDiscoveryProcessLaterActionCannotTakeFirstEligibility(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	start := time.Now().UTC().Add(-time.Second)
+	service := fixedDiscoveryService(db)
+	start := service.now().Add(-time.Second)
 	first := saveDiscoveryAction(t, db, "owner", "first", "60+7", start)
 	later := saveDiscoveryAction(t, db, "owner", "later", "60+7", start.Add(time.Millisecond))
 
@@ -188,8 +196,8 @@ func TestDiscoveryProcessLaterActionCannotTakeFirstEligibility(t *testing.T) {
 
 func TestDiscoveryCollectionQuietlyCatchesUpAcrossBatchesAndBadFacts(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	start := time.Now().UTC().Add(-2 * time.Second)
+	service := fixedDiscoveryService(db)
+	start := service.now().Add(-2 * time.Second)
 	for i := range 270 {
 		expression := "1+1"
 		if i == 269 {
@@ -232,15 +240,15 @@ func TestDiscoveryCollectionQuietlyCatchesUpAcrossBatchesAndBadFacts(t *testing.
 
 func TestDiscoveryOwnershipFailureAndCanceledContext(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	foreign := saveDiscoveryAction(t, db, "other", "other-action", "60+7", time.Now().UTC())
+	service := fixedDiscoveryService(db)
+	foreign := saveDiscoveryAction(t, db, "other", "other-action", "60+7", service.now())
 	if awards, events, err := service.Process(t.Context(), "owner", foreign); !errors.Is(err, sql.ErrNoRows) || len(awards) != 0 || len(events) != 0 {
 		t.Fatalf("foreign record awarded owner: %+v, %+v, %v", awards, events, err)
 	}
 	// Even the caller's record contents cannot manufacture eligibility.
-	plain := saveDiscoveryAction(t, db, "owner", "plain", "1+1", time.Now().UTC())
+	plain := saveDiscoveryAction(t, db, "owner", "plain", "1+1", service.now())
 	forged := plain
-	forged.Outcome = contracts.Outcome{Kind: "success", Value: "67"}
+	forged.Outcome = contracts.Outcome{Kind: contracts.OutcomeSuccess, Value: "67"}
 	if awards, events, err := service.Process(t.Context(), "owner", forged); err != nil || len(awards) != 0 || len(events) != 0 {
 		t.Fatalf("caller supplied facts manufactured an award: %+v, %+v, %v", awards, events, err)
 	}
@@ -264,8 +272,8 @@ func TestDiscoveryOwnershipFailureAndCanceledContext(t *testing.T) {
 
 func TestDiscoveryOptionalFailurePreservesCoreAndRecoversQuietly(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	first := saveDiscoveryAction(t, db, "owner", "failing-action", "((((((60+7))))))", time.Now().UTC())
+	service := fixedDiscoveryService(db)
+	first := saveDiscoveryAction(t, db, "owner", "failing-action", "((((((60+7))))))", service.now())
 	if _, err := db.ExecContext(t.Context(), `
 		CREATE TRIGGER reject_optional_award BEFORE INSERT ON achievements
 		WHEN NEW.achievement_id = 'bracket_architect'
@@ -373,8 +381,8 @@ func TestDiscoveryConcurrentHTTPRetriesAnnounceOnlyOnce(t *testing.T) {
 
 func TestDiscoveryUsageFollowupsUseAcceptedSequenceWithoutNewAwards(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
-	start := time.Now().UTC().Add(-time.Second)
+	service := fixedDiscoveryService(db)
+	start := service.now().Add(-time.Second)
 	records := make([]contracts.CalculationRecord, 101)
 	for i := range records {
 		records[i] = saveDiscoveryAction(t, db, "owner", fmt.Sprintf("usage-%d", i+1), "1/0", start.Add(time.Duration(i)*time.Millisecond))
@@ -430,9 +438,9 @@ func TestDiscoveryHTTPOptionalFailureStillConfirmsCalculation(t *testing.T) {
 
 func TestDiscoveryDelayedProcessingPersistsAwardWithoutExpiredComment(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
+	service := fixedDiscoveryService(db)
 	old := saveDiscoveryAction(t, db, "owner", "delayed-action", "60+7",
-		time.Now().UTC().Add(-discoveryCommentTTL-time.Second))
+		service.now().Add(-discoveryCommentTTL-time.Second))
 	awards, events, err := service.Process(t.Context(), "owner", old)
 	if err != nil || len(awards) != 1 || awards[0].ID != "six_seven" || len(events) != 0 {
 		t.Fatalf("stale action should award quietly: %+v, %+v, %v", awards, events, err)
@@ -440,6 +448,36 @@ func TestDiscoveryDelayedProcessingPersistsAwardWithoutExpiredComment(t *testing
 	collection, _, err := service.Collection(t.Context(), "owner")
 	if err != nil || len(collection) != 1 || !collection[0].EarnedAt.Equal(old.CreatedAt) {
 		t.Fatalf("expired comment changed durable award: %+v, %v", collection, err)
+	}
+}
+
+func TestDiscoveryCommentLifetimeBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		age     time.Duration
+		comment bool
+	}{
+		{"future", -time.Nanosecond, false},
+		{"accepted now", 0, true},
+		{"just before expiry", discoveryCommentTTL - time.Nanosecond, true},
+		{"at expiry", discoveryCommentTTL, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, _ := boundaryDatabase(t)
+			service := fixedDiscoveryService(db)
+			record := saveDiscoveryAction(t, db, "owner", "action", "60+7", service.now().Add(-test.age))
+			awards, events, err := service.Process(t.Context(), "owner", record)
+			if err != nil || len(awards) != 1 || awards[0].ID != "six_seven" || !awards[0].EarnedAt.Equal(record.CreatedAt) {
+				t.Fatalf("comment timing altered durable award: %+v, %v", awards, err)
+			}
+			want := 0
+			if test.comment {
+				want = 1
+			}
+			if len(events) != want {
+				t.Fatalf("comments = %+v, want %d", events, want)
+			}
+		})
 	}
 }
 
@@ -482,7 +520,7 @@ func TestDiscoveryInterruptedCatchupResumesAcrossReopenAndStreakBoundary(t *test
 		BEGIN SELECT RAISE(ABORT, 'catchup interrupted'); END`, discoveryBatchSize)); err != nil {
 		t.Fatal(err)
 	}
-	service := newDiscoveryService(db, true)
+	service := fixedDiscoveryService(db)
 	if awards, _, err := service.Collection(t.Context(), "owner"); err == nil || len(awards) != 0 {
 		t.Fatalf("interrupted collection claimed completion: %+v, %v", awards, err)
 	}
@@ -505,7 +543,7 @@ func TestDiscoveryInterruptedCatchupResumesAcrossReopenAndStreakBoundary(t *test
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
-	service = newDiscoveryService(reopened, true)
+	service = fixedDiscoveryService(reopened)
 	collection, _, err := service.Collection(t.Context(), "owner")
 	if err != nil || len(collection) != 4 {
 		t.Fatalf("resumed collection = %+v, %v", collection, err)
@@ -531,7 +569,7 @@ func TestDiscoveryInterruptedCatchupResumesAcrossReopenAndStreakBoundary(t *test
 
 func TestDiscoveryIncrementalActionsDoNotReplayEvaluatedPrefix(t *testing.T) {
 	db, _ := boundaryDatabase(t)
-	service := newDiscoveryService(db, true)
+	service := fixedDiscoveryService(db)
 	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	for i := range 24 {
 		saveDiscoveryAction(t, db, "owner", fmt.Sprintf("incremental-%02d", i), "1/0", start)
@@ -578,7 +616,7 @@ func TestDiscoveryCompetingReconciliationsKeepEarliestSource(t *testing.T) {
 		last = saveDiscoveryAction(t, db, "owner", fmt.Sprintf("competing-%03d", i),
 			expression, start.Add(time.Duration(i)*time.Second))
 	}
-	services := []*discoveryService{newDiscoveryService(db, true), newDiscoveryService(db, true)}
+	services := []*discoveryService{fixedDiscoveryService(db), fixedDiscoveryService(db)}
 	startWorkers := make(chan struct{})
 	failures := make(chan error, 8)
 	var workers sync.WaitGroup

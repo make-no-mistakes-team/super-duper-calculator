@@ -34,42 +34,42 @@ type Definition struct {
 }
 
 var catalog = [...]Definition{
-	{
+	answerFound: {
 		ID: "answer_found",
 		RU: Text{"Ответ найден", "Получить точный результат 42.", "Ответ есть. Вопрос всё ещё открыт."},
 		EN: Text{"Answer found", "Get an exact result of 42.", "The answer is here. The question isn't."},
 	},
-	{
+	sixSeven: {
 		ID: "six_seven",
 		RU: Text{"Сикс-севен", "Получить точный результат 67.", "Сикс-севен!"},
 		EN: Text{"Six seven", "Get an exact result of 67.", "Six seven!"},
 	},
-	{
+	niceNumber: {
 		ID: "nice_number",
 		RU: Text{"Красивое число", "Получить точный результат 69.", "Nice."},
 		EN: Text{"Nice number", "Get an exact result of 69.", "Nice."},
 	},
-	{
+	resultFound: {
 		ID: "result_found",
 		RU: Text{"Результат найден", "Получить точный результат 404.", "Ошибка 404: результат найден."},
 		EN: Text{"Result found", "Get an exact result of 404.", "404: result found."},
 	},
-	{
+	peerReview: {
 		ID: "peer_review",
 		RU: Text{"Рецензия пройдена", "Повторить без ошибок одно выражение в том же угловом режиме.", "Проверили ещё раз. Ответ тот же."},
 		EN: Text{"Peer reviewed", "Repeat an expression without errors in the same angle mode.", "Checked again. Same answer."},
 	},
-	{
+	bracketArchitect: {
 		ID: "bracket_architect",
 		RU: Text{"Архитектор скобок", "Вычислить выражение с глубокой вложенностью скобок.", "Скобки держатся. Пока что."},
 		EN: Text{"Bracket architect", "Calculate an expression with deeply nested parentheses.", "The parentheses are holding up. For now."},
 	},
-	{
+	scientificMethod: {
 		ID: "scientific_method",
 		RU: Text{"Научный метод", "В одном вычислении применить разные научные функции.", "Здесь уже не обойтись счётом на пальцах."},
 		EN: Text{"Scientific method", "Use different scientific functions in one calculation.", "That's beyond counting on your fingers."},
 	},
-	{
+	touchGrass: {
 		ID: "touch_grass",
 		RU: Text{"Время сделать паузу", "Провести много вычислений, в том числе с ошибками.", "Может, пора выйти погулять?"},
 		EN: Text{"Time for a break", "Make plenty of calculations, including ones that end in errors.", "Maybe take a walk?"},
@@ -182,7 +182,7 @@ func New(config Config) (Rules, error) {
 func (r Rules) Match(input Input) []string {
 	current := &input.Calculation
 	var matches []string
-	if current.Outcome.Kind == "success" {
+	if current.Outcome.Kind == contracts.OutcomeSuccess {
 		switch current.Outcome.Value {
 		case "42":
 			if r.enabled[answerFound] {
@@ -235,7 +235,7 @@ func (r Rules) matchesPeerReview(input *Input) bool {
 	}
 	for i := range input.Previous {
 		previous := &input.Previous[i]
-		if previous.Outcome.Kind != "success" || previous.Expression != current.Expression ||
+		if previous.Outcome.Kind != contracts.OutcomeSuccess || previous.Expression != current.Expression ||
 			previous.Context.AngleUnit != current.Context.AngleUnit || previous.RequestID == "" {
 			return false
 		}

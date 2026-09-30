@@ -11,7 +11,7 @@ export type HistoryProps = {
   messages: Messages;
   onLoadMore: () => void;
   onSelect: (record: CalculationRecord) => void;
-  /** Записи, использующие недоступное расширение (например, факториал). */
+  /** Records using an unavailable extension, such as factorial. */
   isUnsupported?: (record: CalculationRecord) => boolean;
 };
 
@@ -27,6 +27,7 @@ export function History({
   isUnsupported = () => false,
 }: HistoryProps) {
   const t = messages.history;
+  const calculation = messages.calculation;
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(language === 'ru' ? 'ru-RU' : 'en-US', {
@@ -53,14 +54,14 @@ export function History({
             const outcomeText =
               item.outcome.kind === 'success'
                 ? item.outcome.value
-                : (t.mathErrors[item.outcome.error.code] ?? t.mathErrorUnknown);
+                : (calculation.mathErrors[item.outcome.error.code] ?? calculation.mathErrorUnknown);
             const outcomeLabel =
               item.outcome.kind === 'success'
-                ? t.outcomeLabel.success
-                : t.outcomeLabel.error;
+                ? calculation.outcomeLabel.success
+                : calculation.outcomeLabel.error;
             const timeText = dateFormatter.format(new Date(item.createdAt));
-            const angleText = t.angleUnitLabel[item.context.angleUnit];
-            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${angleText}. ${timeText}${unsupported ? `. ${t.unsupported}` : ''}`;
+            const angleText = calculation.angleUnitLabel[item.context.angleUnit];
+            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${angleText}. ${timeText}${unsupported ? `. ${calculation.unsupported}` : ''}`;
 
             return (
               <li key={item.id} className="history-item">
@@ -90,7 +91,7 @@ export function History({
                     </time>
                   </span>
                   {unsupported && (
-                    <span className="history-unsupported">{t.unsupported}</span>
+                    <span className="history-unsupported">{calculation.unsupported}</span>
                   )}
                 </button>
               </li>

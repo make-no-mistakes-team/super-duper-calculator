@@ -18,12 +18,10 @@ import (
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 	"github.com/make-no-mistakes-team/super-duper-calculator/internal/calculation"
+	"github.com/make-no-mistakes-team/super-duper-calculator/internal/storage"
 )
 
-const (
-	sessionCookie    = "calculator_session"
-	semanticsVersion = "binary64-v1"
-)
+const sessionCookie = "calculator_session"
 
 type api struct {
 	db                *sql.DB
@@ -226,7 +224,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	}
 	evaluation, err := a.engine.Evaluate(r.Context(), calculation.Input{Expression: request.Expression, AngleUnit: request.AngleUnit})
 	if errors.Is(err, calculation.ErrExpressionLimit) {
-		apiError(w, http.StatusRequestEntityTooLarge, "EXPRESSION_LIMIT")
+		apiError(w, http.StatusRequestEntityTooLarge, string(contracts.ErrorExpressionLimit))
 		return
 	}
 	if err != nil {
@@ -240,7 +238,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	}
 	record := contracts.CalculationRecord{
 		ID: id, RequestID: request.RequestID, Expression: request.Expression,
-		Context: contracts.CalculationContext{AngleUnit: request.AngleUnit, SemanticsVersion: semanticsVersion},
+		Context: contracts.CalculationContext{AngleUnit: request.AngleUnit, SemanticsVersion: calculation.SemanticsVersion},
 		Outcome: evaluation.Outcome, Facts: evaluation.Facts, CreatedAt: time.Now().UTC(),
 	}
 	outcomeJSON, err := json.Marshal(record.Outcome)
@@ -297,9 +295,9 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts.CalculationRecord, error) {
-	return readRecord(a.db.QueryRowContext(r.Context(), `
-		SELECT id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at
-		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID), nil)
+	return storage.ReadCalculationRecord(a.db.QueryRowContext(r.Context(), `
+		SELECT `+storage.CalculationRecordColumns+`
+		FROM calculations WHERE session_id = ? AND request_id = ?`, owner, requestID), nil, storage.StrictFacts)
 }
 
 func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest,
@@ -312,33 +310,6 @@ func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord,
 		Calculation: record, Publication: contracts.Publication{Status: "private"},
 		Achievements: achievements, FunEvents: events,
 	})
-}
-
-type scanner interface{ Scan(...any) error }
-
-func readRecord(row scanner, seq *int64) (contracts.CalculationRecord, error) {
-	var record contracts.CalculationRecord
-	var outcomeJSON, createdAt string
-	var factsJSON sql.NullString
-	values := []any{&record.ID, &record.RequestID, &record.Expression, &record.Context.AngleUnit,
-		&record.Context.SemanticsVersion, &outcomeJSON, &factsJSON, &createdAt}
-	if seq != nil {
-		values = append([]any{seq}, values...)
-	}
-	err := row.Scan(values...)
-	if err != nil {
-		return record, err
-	}
-	if err := json.Unmarshal([]byte(outcomeJSON), &record.Outcome); err != nil {
-		return record, err
-	}
-	if factsJSON.Valid && factsJSON.String != "null" {
-		if err := json.Unmarshal([]byte(factsJSON.String), &record.Facts); err != nil {
-			return record, err
-		}
-	}
-	record.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
-	return record, err
 }
 
 func (a api) history(w http.ResponseWriter, r *http.Request) {
@@ -380,7 +351,7 @@ func (a api) history(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT seq, id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at
+		SELECT `+storage.SequencedCalculationRecordColumns+`
 		FROM calculations WHERE session_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`, owner, before, limit+1)
 	if err != nil {
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
@@ -391,7 +362,7 @@ func (a api) history(w http.ResponseWriter, r *http.Request) {
 	var lastSeq int64
 	for rows.Next() {
 		var seq int64
-		record, err := readRecord(rows, &seq)
+		record, err := storage.ReadCalculationRecord(rows, &seq, storage.StrictFacts)
 		if err != nil {
 			apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
 			return

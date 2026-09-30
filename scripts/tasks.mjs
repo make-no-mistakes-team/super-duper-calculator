@@ -22,9 +22,9 @@ function terminate(child, signal) {
   }
 }
 
-function start(command, args, cwd = root) {
+function start(command, args, cwd = root, env = process.env) {
   if (shutdownPromise) throw new Error("Task interrupted.");
-  const child = spawn(command, args, { cwd, stdio: "inherit", detached: true });
+  const child = spawn(command, args, { cwd, env, stdio: "inherit", detached: true });
   const finished = new Promise((resolve, reject) => {
     child.once("error", (error) => reject(new Error(`${command}: ${error.message}`)));
     child.once("exit", (code, signal) => resolve({ code, signal }));
@@ -41,8 +41,8 @@ function exitDescription({ code, signal }) {
   return signal ? `stopped by ${signal}` : `exited with code ${code}`;
 }
 
-async function run(command, args, cwd = root) {
-  const result = await start(command, args, cwd);
+async function run(command, args, cwd = root, env = process.env) {
+  const result = await start(command, args, cwd, env);
   if (result.code !== 0) throw new Error(`${command} ${exitDescription(result)}.`);
 }
 
@@ -95,9 +95,9 @@ function loadEnvironment() {
   }
 }
 
-async function buildGo() {
+async function buildGo(env = process.env) {
   await mkdir(join(root, "bin"), { recursive: true });
-  await run("go", ["build", "-o", binary, "./cmd/calculator"]);
+  await run("go", ["build", "-o", binary, "./cmd/calculator"], root, env);
 }
 
 async function buildWeb() {
@@ -147,6 +147,11 @@ const tasks = {
     await run("go", ["vet", "./..."]);
     await run("go", ["test", "./..."]);
     await tasks["build-web"]();
+  },
+  async "check-browser"() {
+    await buildGo({ ...process.env, CGO_ENABLED: "0" });
+    await buildWeb();
+    await run("npm", ["run", "test:browser"], web);
   },
 };
 

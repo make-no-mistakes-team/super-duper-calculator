@@ -178,13 +178,13 @@ func (s *incidentService) Process(ctx context.Context, owner string, record cont
 
 func divisionByZero(raw string) bool {
 	var outcome struct {
-		Kind  string `json:"kind"`
+		Kind  contracts.OutcomeKind `json:"kind"`
 		Error *struct {
-			Code string `json:"code"`
+			Code contracts.MathErrorCode `json:"code"`
 		} `json:"error"`
 	}
 	return json.Unmarshal([]byte(raw), &outcome) == nil &&
-		outcome.Kind == "error" && outcome.Error != nil && outcome.Error.Code == "DIVISION_BY_ZERO"
+		outcome.Kind == contracts.OutcomeError && outcome.Error != nil && outcome.Error.Code == contracts.ErrorDivisionByZero
 }
 
 func incidentLive(now, acceptedAt, expiresAt time.Time) bool {

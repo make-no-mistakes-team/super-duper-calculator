@@ -29,6 +29,20 @@ jobs:
         run: make setup
       - name: Check tagged source
         run: make check
+      - name: Install Chromium and browser system dependencies
+        working-directory: web
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Check tagged client, Go service, and SQLite
+        run: make check-browser
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: browser-failure
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
       - name: Build application
         run: make build
       - name: Package executable and web assets

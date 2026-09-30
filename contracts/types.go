@@ -10,6 +10,37 @@ const (
 	Radians AngleUnit = "rad"
 )
 
+// OutcomeKind distinguishes a result from a stored mathematical error.
+type OutcomeKind string
+
+const (
+	OutcomeSuccess OutcomeKind = "success"
+	OutcomeError   OutcomeKind = "error"
+)
+
+// ErrorStage identifies whether a mathematical diagnostic came from parsing or evaluation.
+type ErrorStage string
+
+const (
+	StageParse    ErrorStage = "parse"
+	StageEvaluate ErrorStage = "evaluate"
+)
+
+// MathErrorCode names mathematical diagnostics without changing their JSON spelling.
+// Expression limits reject a request rather than create a stored error outcome.
+type MathErrorCode string
+
+const (
+	ErrorSyntax             MathErrorCode = "SYNTAX_ERROR"
+	ErrorUnknownIdentifier  MathErrorCode = "UNKNOWN_IDENTIFIER"
+	ErrorUnsupportedFeature MathErrorCode = "UNSUPPORTED_FEATURE"
+	ErrorWrongArity         MathErrorCode = "WRONG_ARITY"
+	ErrorDivisionByZero     MathErrorCode = "DIVISION_BY_ZERO"
+	ErrorDomain             MathErrorCode = "DOMAIN_ERROR"
+	ErrorNumericOverflow    MathErrorCode = "NUMERIC_OVERFLOW"
+	ErrorExpressionLimit    MathErrorCode = "EXPRESSION_LIMIT"
+)
+
 type CapabilityLimits struct {
 	ExpressionLength int `json:"expressionLength"`
 	Tokens           int `json:"tokens"`
@@ -47,17 +78,17 @@ type SourceSpan struct {
 }
 
 type MathError struct {
-	Code   string         `json:"code"`
-	Stage  string         `json:"stage"`
+	Code   MathErrorCode  `json:"code"`
+	Stage  ErrorStage     `json:"stage"`
 	Params map[string]any `json:"params"`
 	Span   *SourceSpan    `json:"span"`
 }
 
 // Success has Value; a mathematical error has Error. The engine owns formatting.
 type Outcome struct {
-	Kind  string     `json:"kind"`
-	Value string     `json:"value,omitempty"`
-	Error *MathError `json:"error,omitempty"`
+	Kind  OutcomeKind `json:"kind"`
+	Value string      `json:"value,omitempty"`
+	Error *MathError  `json:"error,omitempty"`
 }
 
 type CalculationContext struct {

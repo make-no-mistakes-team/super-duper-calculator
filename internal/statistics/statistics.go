@@ -52,18 +52,18 @@ func Read(ctx context.Context, db *sql.DB, owner string) (stats contracts.Person
 			return contracts.PersonalStatistics{}, fmt.Errorf("decode outcome for calculation %s: %w", id, err)
 		}
 		switch outcome.Kind {
-		case "success":
+		case contracts.OutcomeSuccess:
 			if outcome.Error != nil || outcome.Value == "" {
 				return contracts.PersonalStatistics{}, fmt.Errorf("invalid success outcome for calculation %s", id)
 			}
 			stats.Successes++
-		case "error":
+		case contracts.OutcomeError:
 			if outcome.Value != "" || outcome.Error == nil || outcome.Error.Code == "" ||
-				(outcome.Error.Stage != "parse" && outcome.Error.Stage != "evaluate") {
+				(outcome.Error.Stage != contracts.StageParse && outcome.Error.Stage != contracts.StageEvaluate) {
 				return contracts.PersonalStatistics{}, fmt.Errorf("invalid mathematical outcome for calculation %s", id)
 			}
 			stats.MathematicalErrors++
-			if outcome.Error.Code == "DIVISION_BY_ZERO" {
+			if outcome.Error.Code == contracts.ErrorDivisionByZero {
 				stats.DivisionByZeroAttempts++
 			}
 		default:
@@ -79,7 +79,7 @@ func Read(ctx context.Context, db *sql.DB, owner string) (stats contracts.Person
 				if facts.Depth < 0 || facts.OperationCount < 0 {
 					return contracts.PersonalStatistics{}, fmt.Errorf("negative parsed metadata for calculation %s", id)
 				}
-				parsed := outcome.Kind == "success" || outcome.Error.Stage != "parse"
+				parsed := outcome.Kind == contracts.OutcomeSuccess || outcome.Error.Stage != contracts.StageParse
 				if err := addUsage(stats.Operators, facts.Operators, parsed); err != nil {
 					return contracts.PersonalStatistics{}, fmt.Errorf("operators for calculation %s: %w", id, err)
 				}

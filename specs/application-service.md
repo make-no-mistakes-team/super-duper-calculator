@@ -216,6 +216,11 @@ Accounts, password recovery, and cross-device synchronization are out of scope.
 Availability controls which features the UI offers. The server validates every
 request independently.
 
+`calculation.MathematicalCapabilities()` supplies the canonical mathematical
+version, operators, function arities, angle settings, and input budgets from the
+engine definitions. The HTTP layer adds deployment-specific optional-feature
+availability; it does not maintain a second mathematical description.
+
 ## Operations
 
 | Method and path | Purpose |
@@ -299,6 +304,12 @@ inside the room stream.
 Personal achievement entries contain a stable achievement `id` and `earnedAt`;
 the calculation response reports newly earned entries, while session bootstrap
 returns the existing collection without requesting new announcements.
+
+History, action replay, and discovery queries share the storage record
+projection and decoder. Ordinary history and replay decode facts strictly;
+discovery eligibility may discard malformed or negative optional facts.
+Source, outcome, and timestamp decoding remain strict in both modes, and facts
+are decoded once.
 
 An accepted syntax or domain error is still a calculation record and uses
 HTTP 200. Request failures use the error responses below and create no record.

@@ -71,8 +71,10 @@ func TestArithmeticSuccess(t *testing.T) {
 
 func TestArithmeticErrors(t *testing.T) {
 	for _, tc := range []struct {
-		expression, code, stage string
-		span                    contracts.SourceSpan
+		expression string
+		code       contracts.MathErrorCode
+		stage      contracts.ErrorStage
+		span       contracts.SourceSpan
 	}{
 		// Evaluation errors point at the failed operation.
 		{"1/0", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 0, End: 3}},
@@ -187,7 +189,7 @@ func TestLimits(t *testing.T) {
 func TestUTF16ExpressionLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name, expression string
-		code             string
+		code             contracts.MathErrorCode
 		limited          bool
 		span             contracts.SourceSpan
 	}{
@@ -346,7 +348,7 @@ func TestScientificErrors(t *testing.T) {
 	for _, tc := range []struct {
 		expression string
 		unit       contracts.AngleUnit
-		code       string
+		code       contracts.MathErrorCode
 		name       string // WRONG_ARITY and UNKNOWN_IDENTIFIER params
 	}{
 		{"sqrt(-1)", deg, "DOMAIN_ERROR", ""},
@@ -423,8 +425,10 @@ func TestScientificErrors(t *testing.T) {
 // Evaluation errors of functions point at the whole call.
 func TestScientificErrorSpans(t *testing.T) {
 	for _, tc := range []struct {
-		expression, code, stage string
-		span                    contracts.SourceSpan
+		expression string
+		code       contracts.MathErrorCode
+		stage      contracts.ErrorStage
+		span       contracts.SourceSpan
 	}{
 		{"sqrt(-1)", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 8}},
 		{"1+ln(0)", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 2, End: 7}},
@@ -469,8 +473,10 @@ func TestFactorialSuccess(t *testing.T) {
 
 func TestFactorialErrorsAndFacts(t *testing.T) {
 	for _, tc := range []struct {
-		expression, code, stage string
-		span                    contracts.SourceSpan
+		expression string
+		code       contracts.MathErrorCode
+		stage      contracts.ErrorStage
+		span       contracts.SourceSpan
 	}{
 		{"(-3)!", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 5}},
 		{"5.5!", "DOMAIN_ERROR", "evaluate", contracts.SourceSpan{Start: 0, End: 4}},
@@ -612,8 +618,10 @@ func TestParenthesizedFunctionsFinishBeforeFollowingOperators(t *testing.T) {
 
 func TestRemainderErrorsAndFacts(t *testing.T) {
 	for _, tc := range []struct {
-		expression, code, stage string
-		span                    contracts.SourceSpan
+		expression string
+		code       contracts.MathErrorCode
+		stage      contracts.ErrorStage
+		span       contracts.SourceSpan
 	}{
 		{"mod(1,0)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 0, End: 8}},
 		{"mod(1,-0)", "DIVISION_BY_ZERO", "evaluate", contracts.SourceSpan{Start: 0, End: 9}},

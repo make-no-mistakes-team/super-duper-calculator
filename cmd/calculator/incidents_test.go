@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"net/url"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 	"github.com/make-no-mistakes-team/super-duper-calculator/internal/storage"
+	"modernc.org/sqlite"
 )
 
 func incidentAt(service *incidentService, at time.Time) {
@@ -48,7 +51,7 @@ func TestIncidentThirdDistinctStoredErrorAndSequenceBound(t *testing.T) {
 	// Caller data is untrusted; a forged mathematical error must not count.
 	ordinary := saveDiscoveryAction(t, db, "owner", "ordinary", "1+1", start.Add(1500*time.Millisecond))
 	forged := ordinary
-	forged.Outcome = contracts.Outcome{Kind: "error", Error: &contracts.MathError{Code: "DIVISION_BY_ZERO"}}
+	forged.Outcome = contracts.Outcome{Kind: contracts.OutcomeError, Error: &contracts.MathError{Code: contracts.ErrorDivisionByZero}}
 	if events, err := service.Process(t.Context(), "owner", forged); err != nil || len(events) != 0 {
 		t.Fatalf("forged error caused incident: %+v, %v", events, err)
 	}
@@ -56,7 +59,7 @@ func TestIncidentThirdDistinctStoredErrorAndSequenceBound(t *testing.T) {
 	// A later committed action cannot supply the third error for third's
 	// historical snapshot; the actual third action remains eligible itself.
 	fourth := saveDiscoveryAction(t, db, "owner", "fourth", "1/0", start.Add(3*time.Second))
-	third.Outcome = contracts.Outcome{Kind: "success", Value: "2"}
+	third.Outcome = contracts.Outcome{Kind: contracts.OutcomeSuccess, Value: "2"}
 	events, err := service.Process(t.Context(), "owner", third)
 	if err != nil {
 		t.Fatal(err)
@@ -382,35 +385,114 @@ func TestIncidentExpiredProcessingDoesNotClaimCooldown(t *testing.T) {
 	expectIncident(t, events, fourth)
 }
 
+// A private driver keeps the trigger's scalar function local to this test's
+// connections: no process-global registrations survive repeated or parallel runs.
+type incidentClaimConnector struct {
+	sqliteDriver *sqlite.Driver
+	dsn          string
+}
+
+func (c incidentClaimConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return c.sqliteDriver.Open(c.dsn)
+}
+
+func (c incidentClaimConnector) Driver() driver.Driver { return c.sqliteDriver }
+
 func TestIncidentExpirationDuringClaimRollsBack(t *testing.T) {
-	db, _ := boundaryDatabase(t)
-	service := newIncidentService(db, true)
-	start := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
-	saveDiscoveryAction(t, db, "owner", "first", "1/0", start)
-	saveDiscoveryAction(t, db, "owner", "second", "1/0", start.Add(time.Second))
-	third := saveDiscoveryAction(t, db, "owner", "third", "1/0", start.Add(2*time.Second))
-	checks := 0
-	service.now = func() time.Time {
-		checks++
-		if checks >= 4 {
-			return third.CreatedAt.Add(incidentTTL)
+	for _, existingClaim := range []bool{false, true} {
+		name := "insert"
+		if existingClaim {
+			name = "update"
 		}
-		return third.CreatedAt
+		t.Run(name, func(t *testing.T) {
+			initialized, path := boundaryDatabase(t)
+			if err := initialized.Close(); err != nil {
+				t.Fatal(err)
+			}
+			start := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
+			now := start
+			var expiresAt time.Time
+			writePhaseReached := false
+			sqliteDriver := &sqlite.Driver{}
+			if err := sqliteDriver.RegisterScalarFunction("expire_incident_claim", 0,
+				func(*sqlite.FunctionContext, []driver.Value) (driver.Value, error) {
+					writePhaseReached = true
+					now = expiresAt
+					return nil, nil
+				}); err != nil {
+				t.Fatal(err)
+			}
+			dsn := url.URL{Scheme: "file", Path: path, RawQuery: url.Values{
+				"mode":    {"rw"},
+				"_pragma": {"foreign_keys(ON)", "busy_timeout(5000)", "journal_mode(WAL)", "synchronous(FULL)"},
+			}.Encode()}
+			db := sql.OpenDB(incidentClaimConnector{sqliteDriver: sqliteDriver, dsn: dsn.String()})
+			db.SetMaxOpenConns(1)
+			db.SetMaxIdleConns(1)
+			t.Cleanup(func() { _ = db.Close() })
+			service := newIncidentService(db, true)
+			service.now = func() time.Time { return now }
+
+			var prior contracts.CalculationRecord
+			if existingClaim {
+				saveDiscoveryAction(t, db, "owner", "prior-first", "1/0", start)
+				saveDiscoveryAction(t, db, "owner", "prior-second", "1/0", start.Add(time.Second))
+				prior = saveDiscoveryAction(t, db, "owner", "prior", "1/0", start.Add(2*time.Second))
+				now = prior.CreatedAt
+				events, err := service.Process(t.Context(), "owner", prior)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expectIncident(t, events, prior)
+				start = prior.CreatedAt.Add(incidentCooldown)
+			}
+			saveDiscoveryAction(t, db, "owner", "first", "1/0", start)
+			saveDiscoveryAction(t, db, "owner", "second", "1/0", start.Add(time.Second))
+			third := saveDiscoveryAction(t, db, "owner", "third", "1/0", start.Add(2*time.Second))
+			now = third.CreatedAt
+			expiresAt = third.CreatedAt.Add(incidentTTL)
+			// AFTER runs only once the real cooldown row has been written.
+			// Advancing the control clock here makes expiration causal rather
+			// than dependent on how often Process observes time.
+			if _, err := db.ExecContext(t.Context(), `
+				CREATE TRIGGER expire_inserted_incident AFTER INSERT ON personal_effects
+				WHEN NEW.last_calculation_id = 'third'
+				BEGIN SELECT expire_incident_claim(); END;
+				CREATE TRIGGER expire_updated_incident AFTER UPDATE ON personal_effects
+				WHEN NEW.last_calculation_id = 'third'
+				BEGIN SELECT expire_incident_claim(); END`); err != nil {
+				t.Fatal(err)
+			}
+			if events, err := service.Process(t.Context(), "owner", third); err != nil || len(events) != 0 {
+				t.Fatalf("expired in-flight claim announced: %+v, %v", events, err)
+			}
+			if !writePhaseReached {
+				t.Fatal("claim never reached the SQLite AFTER write trigger")
+			}
+			var claimID string
+			var sceneAt int64
+			err := db.QueryRowContext(t.Context(), `
+				SELECT last_calculation_id, last_scene_at_ns FROM personal_effects
+				WHERE session_id = 'owner'`).Scan(&claimID, &sceneAt)
+			if existingClaim {
+				if err != nil || claimID != prior.ID || sceneAt != prior.CreatedAt.UnixNano() {
+					t.Fatalf("expired update changed prior cooldown: id=%q time=%d err=%v", claimID, sceneAt, err)
+				}
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("expired insert persisted cooldown: id=%q time=%d err=%v", claimID, sceneAt, err)
+			}
+			fourth := saveDiscoveryAction(t, db, "owner", "fourth", "1/0", expiresAt)
+			now = fourth.CreatedAt
+			events, err := service.Process(t.Context(), "owner", fourth)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectIncident(t, events, fourth)
+		})
 	}
-	if events, err := service.Process(t.Context(), "owner", third); err != nil || len(events) != 0 {
-		t.Fatalf("expired in-flight claim announced: %+v, %v", events, err)
-	}
-	var cooldowns int
-	if err := db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM personal_effects WHERE session_id = 'owner'").Scan(&cooldowns); err != nil || cooldowns != 0 {
-		t.Fatalf("expired claim consumed cooldown: %d, %v", cooldowns, err)
-	}
-	fourth := saveDiscoveryAction(t, db, "owner", "fourth", "1/0", start.Add(3*time.Second))
-	incidentAt(service, fourth.CreatedAt)
-	events, err := service.Process(t.Context(), "owner", fourth)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectIncident(t, events, fourth)
 }
 
 func TestIncidentSQLFailurePreservesCommittedAction(t *testing.T) {

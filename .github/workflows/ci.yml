@@ -28,3 +28,17 @@ jobs:
         run: make setup
       - name: Check Go and web
         run: make check
+      - name: Install Chromium and browser system dependencies
+        working-directory: web
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Check real browser, Go service, and SQLite
+        run: make check-browser
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: browser-failure
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore

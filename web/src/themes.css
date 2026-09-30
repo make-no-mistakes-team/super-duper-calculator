@@ -1,0 +1,81 @@
+:root {
+  --foreground: #f2f4f2;
+  --page-background: #08050b;
+  --workspace-background:
+    radial-gradient(ellipse at 6% 10%, rgb(80 57 91 / .14), transparent 58%),
+    radial-gradient(ellipse at 96% 80%, rgb(83 58 110 / .12), transparent 58%),
+    linear-gradient(125deg, #08060a 12%, #100c14 48%, #09070d 80%);
+  --scrollbar-thumb: #849692;
+  --surface: #0c1214;
+  --surface-hover: #202a2c;
+  --line: #667577;
+  --frame: #b6c5c3;
+  --frame-top: #e0ece7;
+  --frame-focus: var(--foreground);
+  --muted: #b5c1bf;
+  --accent: #d5ff70;
+  --error: #ff9e93;
+  --glass: rgb(10 7 14 / .66);
+  --glass-sheen: linear-gradient(125deg, rgb(249 239 255 / .065), transparent 42%, rgb(185 164 205 / .025));
+  --selection-foreground: #000;
+  --disabled-foreground: #788182;
+  --hover-foreground: #fff;
+  --placeholder-foreground: #8a9495;
+  --hint-key-foreground: #e0e5e3;
+  --submit-background: var(--foreground);
+  --submit-foreground: #080a0b;
+  --tool-switch-background: rgb(8 14 15 / .45);
+  --tool-switch-foreground: #d1dad6;
+  --tool-switch-expanded-background: rgb(25 38 18 / .72);
+  --key-background: rgb(20 30 32 / .58);
+  --key-foreground: var(--foreground);
+  --operator-frame: #899491;
+  --key-active-background: #303b29;
+  --result-background: rgb(3 8 9 / .22);
+  --secondary-foreground: #e3e8e6;
+  --syntax-foreground: #c5cccc;
+  --mobile-tool-strip-background: rgb(5 10 11 / .96);
+  --mobile-tool-switch-background: var(--tool-switch-background);
+  --mobile-tool-bay-background: rgb(7 12 14 / .94);
+}
+
+html[data-theme='amber'] {
+  --foreground: #fbf0e2;
+  --page-background: #100a08;
+  --workspace-background:
+    radial-gradient(ellipse at 7% 12%, rgb(137 79 41 / .18), transparent 57%),
+    radial-gradient(ellipse at 96% 82%, rgb(124 66 29 / .15), transparent 59%),
+    linear-gradient(125deg, #100a08 12%, #1c110d 48%, #0e0908 80%);
+  --scrollbar-thumb: #ac8363;
+  --surface: #1b110d;
+  --surface-hover: #38251b;
+  --line: #92745e;
+  --frame: #d9ae82;
+  --frame-top: #f6dbb6;
+  --frame-focus: #ffe0af;
+  --muted: #ddc8b3;
+  --accent: #ffd18a;
+  --error: #ff9e9b;
+  --glass: rgb(29 17 12 / .76);
+  --glass-sheen: linear-gradient(125deg, rgb(255 224 177 / .1), transparent 43%, rgb(163 91 44 / .06));
+  --selection-foreground: #1b100a;
+  --disabled-foreground: #ac9a86;
+  --hover-foreground: #fff4e5;
+  --placeholder-foreground: #bba48f;
+  --hint-key-foreground: #f8e8d5;
+  --submit-background: #f8dfbd;
+  --submit-foreground: var(--selection-foreground);
+  --tool-switch-background: var(--key-background);
+  --tool-switch-foreground: var(--key-foreground);
+  --tool-switch-expanded-background: rgb(101 59 28 / .66);
+  --key-background: rgb(43 27 19 / .68);
+  --key-foreground: #f5e7d5;
+  --operator-frame: #b99977;
+  --key-active-background: #59391e;
+  --result-background: rgb(17 9 6 / .3);
+  --secondary-foreground: #f4e6d4;
+  --syntax-foreground: var(--secondary-foreground);
+  --mobile-tool-strip-background: rgb(20 12 9 / .97);
+  --mobile-tool-switch-background: transparent;
+  --mobile-tool-bay-background: rgb(25 14 10 / .96);
+}

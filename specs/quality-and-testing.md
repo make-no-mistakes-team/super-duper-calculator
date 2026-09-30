@@ -126,6 +126,12 @@ Exercise the actual application with keyboard and touch:
 Use browser automation for critical flows and inspect the actual interface for
 layout, motion, and interaction changes.
 
+`make check-browser` builds the real application and runs the repository's
+Chromium scenarios with per-test temporary SQLite files and browser identities.
+The [build and check instructions](../README.md#build-and-check) describe browser
+provisioning and failure reports. Network interceptions may delay real replies
+or simulate failure; they must not replace calculation or history data.
+
 ## Optional presentation checks
 
 For themes, switch while editor, result, and history state exists. Verify state
@@ -167,11 +173,15 @@ Use independent browser identities, not merely tabs sharing one cookie.
 For humor, use a controlled clock to test cooldown boundaries and expiry.
 Verify persistent one-time awards, burst coalescing, safe dismiss/automatic
 recovery, and unaffected real outcomes when effects are disabled.
+Expiry during a transaction must be tied to the actual claim write phase, not
+to the number of internal clock observations.
 
 ## Public rehearsal and CI
 
 CI runs the critical deterministic engine and service checks, including the
-[persistence scenarios](#service-and-persistence-behavior).
+[persistence scenarios](#service-and-persistence-behavior), and the real-browser
+scenarios through `make check-browser`. Tagged release builds use the same
+browser gate before publication.
 Add regression coverage for discovered behavioral defects.
 
 Public deployment checks use the real hosted version and the workload specified

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -24,6 +23,7 @@ type discoveryService struct {
 	catalog        []contracts.DiscoveryDefinition
 	previousLimit  int
 	followupCounts []int64
+	now            func() time.Time
 }
 
 func newDiscoveryService(db *sql.DB, enabled bool) *discoveryService {
@@ -52,6 +52,7 @@ func newDiscoveryService(db *sql.DB, enabled bool) *discoveryService {
 		db: db, rules: rules, catalog: catalog,
 		previousLimit:  max(config.PeerReviewCount-1, 0),
 		followupCounts: []int64{50, 100},
+		now:            time.Now,
 	}
 }
 
@@ -77,7 +78,7 @@ func (s *discoveryService) Process(ctx context.Context, owner string, record con
 		return nil, nil, err
 	}
 	// An expired comment is not revived if optional processing finished late.
-	now := time.Now()
+	now := s.now()
 	events := make([]contracts.FunEvent, 0, len(awards))
 	for _, award := range awards {
 		expiresAt := award.EarnedAt.Add(discoveryCommentTTL)
@@ -183,8 +184,7 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 			return nil, 0, err
 		}
 		rows, err := s.db.QueryContext(ctx, `
-			SELECT seq, id, request_id, expression, angle_unit, semantics_version,
-				outcome_json, facts_json, created_at
+			SELECT `+storage.SequencedCalculationRecordColumns+`
 			FROM calculations
 			WHERE session_id = ? AND seq > ? AND seq <= ?
 			ORDER BY seq ASC LIMIT ?`, owner, progress.LastSequence, through, discoveryBatchSize)
@@ -199,7 +199,7 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 				return nil, 0, err
 			}
 			var seq int64
-			record, err := readRecord(discoveryFactsScanner{rows}, &seq)
+			record, err := storage.ReadCalculationRecord(rows, &seq, storage.DiscoveryFacts)
 			if err != nil {
 				_ = rows.Close()
 				return nil, 0, fmt.Errorf("decode discovery calculation: %w", err)
@@ -259,8 +259,7 @@ func (s *discoveryService) predecessors(ctx context.Context, owner string, throu
 		return previous, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, request_id, expression, angle_unit, semantics_version,
-			outcome_json, facts_json, created_at
+		SELECT `+storage.CalculationRecordColumns+`
 		FROM calculations WHERE session_id = ? AND seq <= ?
 		ORDER BY seq DESC LIMIT ?`, owner, through, s.previousLimit)
 	if err != nil {
@@ -268,7 +267,7 @@ func (s *discoveryService) predecessors(ctx context.Context, owner string, throu
 	}
 	defer rows.Close()
 	for rows.Next() {
-		record, err := readRecord(discoveryFactsScanner{rows}, nil)
+		record, err := storage.ReadCalculationRecord(rows, nil, storage.DiscoveryFacts)
 		if err != nil {
 			return nil, fmt.Errorf("decode discovery predecessor: %w", err)
 		}
@@ -281,41 +280,4 @@ func (s *discoveryService) predecessors(ctx context.Context, owner string, throu
 		return nil, fmt.Errorf("close discovery predecessors: %w", err)
 	}
 	return previous, nil
-}
-
-// Old optional metadata can be malformed without invalidating an otherwise
-// accepted calculation. Let readRecord decode all authoritative fields while
-// treating only corrupt optional facts as absent for discovery eligibility.
-type discoveryFactsScanner struct{ scanner }
-
-func (s discoveryFactsScanner) Scan(values ...any) error {
-	if err := s.scanner.Scan(values...); err != nil {
-		return err
-	}
-	facts := values[len(values)-2].(*sql.NullString)
-	if !facts.Valid || facts.String == "null" {
-		return nil
-	}
-	var decoded *contracts.CalculationFacts
-	if err := json.Unmarshal([]byte(facts.String), &decoded); err != nil || !validDiscoveryFacts(decoded) {
-		*facts = sql.NullString{}
-	}
-	return nil
-}
-
-func validDiscoveryFacts(facts *contracts.CalculationFacts) bool {
-	if facts == nil || facts.Depth < 0 || facts.OperationCount < 0 {
-		return false
-	}
-	for _, count := range facts.Operators {
-		if count < 0 {
-			return false
-		}
-	}
-	for _, count := range facts.Functions {
-		if count < 0 {
-			return false
-		}
-	}
-	return true
 }

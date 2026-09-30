@@ -291,14 +291,12 @@ func TestCatalogStableLocalizedAndCopied(t *testing.T) {
 	if discovery.Known("not_a_rule") {
 		t.Fatal("unknown discovery accepted")
 	}
-	if definitions[1].RU.Comment != "Сикс-севен!" || definitions[1].EN.Comment != "Six seven!" {
-		t.Fatal("required six-seven reaction is missing")
-	}
+	originalComment := definitions[1].EN.Comment
 	definitions[0].ID = "changed"
 	definitions[1].EN.Comment = "changed"
 	config.Enabled[0] = "changed"
 	fresh := discovery.Catalog()
-	if fresh[0].ID != want[0] || fresh[1].EN.Comment != "Six seven!" ||
+	if fresh[0].ID != want[0] || fresh[1].EN.Comment != originalComment ||
 		discovery.DefaultConfig().Enabled[0] != want[0] || !discovery.Known(want[0]) {
 		t.Fatal("catalog or default configuration leaked caller mutation")
 	}

@@ -105,10 +105,51 @@ make build       # bin/calculator and copied bin/web assets
 make build-go    # Only the Go binary
 make build-web   # Build web/dist and replace bin/web with fresh assets
 make check       # Go build, vet, tests; web typecheck and build
+make check-browser # Built client + Go + SQLite in Chromium
 ```
 
-CI uses the same setup and checks with CGO disabled. Storage checks use isolated
-database files.
+The strict TypeScript check covers the client, browser scenarios, fixtures, and
+Playwright configuration. `make check` needs no browser installation. To
+provision the browser check after `make setup`, run the standard Playwright
+installer:
+
+```sh
+cd web
+npx --no-install playwright install --with-deps chromium
+cd ..
+make check-browser
+```
+
+The installer downloads the pinned Chromium build and installs its system
+dependencies; on Linux the system-dependency step may need sudo. Browser
+installation is explicit, not part of `make setup` or `make check`.
+
+`make check-browser` rebuilds the Go executable with CGO disabled and stages
+the built client using the normal build tasks. Playwright starts a real Go
+server for each test on an available loopback port, with a fresh temporary
+SQLite file and isolated browser identities. It stops the server and removes
+the temporary database on success or failure; it never opens the configured
+development database.
+
+The suite covers the scientific `17` flow, history restore/reuse/reload,
+private histories, error correction, canonical clipboard values, angle
+context and stale replies, failed/held collection refreshes, replacement
+identities, keyboard/IME handling, scene dismissal, and mobile theme switching.
+HTTP interceptions only delay real replies or simulate network failure; they
+do not supply calculation or history data. Tests run serially with explicit
+response and UI waits.
+
+A failing check returns a nonzero exit status. The HTML report is in
+`web/playwright-report/`; failure screenshots, traces, and server logs are in
+`web/test-results/`. Both directories are ignored by Git. To inspect a report:
+
+```sh
+cd web
+npx --no-install playwright show-report
+```
+
+CI runs both checks after locked dependency setup and Chromium provisioning,
+with CGO disabled. Storage and browser checks use isolated database files.
 
 `make dev` also stages `bin/web`; Vite still reloads browser changes. The Go
 binary serves the staged client and API from any working directory. For a
@@ -128,7 +169,8 @@ the built application needs neither Node.js nor the source checkout: keep
 
 Pushing a version tag matching `v*` triggers
 [the release workflow](.github/workflows/release.yml). It runs `make setup`,
-`make check`, and `make build` on the tagged source with CGO disabled, then
+provisions Chromium, and runs `make check`, `make check-browser`, and
+`make build` on the tagged source with CGO disabled, then
 publishes `calculator-linux-amd64.tar.gz` to
 [GitHub Releases](https://github.com/make-no-mistakes-team/super-duper-calculator/releases).
 Publication requires successful checks, build, and packaging. Branch pushes
@@ -156,6 +198,7 @@ device and package the same two outputs:
 ```sh
 make setup
 make check
+make check-browser # Provision Chromium first, as described above
 make build
 tar -czf calculator-local.tar.gz -C bin calculator web
 ```

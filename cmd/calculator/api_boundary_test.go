@@ -273,6 +273,39 @@ func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodGet, "/api/history", ""), http.StatusServiceUnavailable)
 }
 
+func TestCorruptOptionalFactsRejectReplayAndHistoryButAllowDiscoveryRepair(t *testing.T) {
+	db, _ := boundaryDatabase(t)
+	handler := newHandler(db, nil, true, false)
+	owner := browserSession(t, handler)
+	const body = `{"requestId":"saved-action","expression":"60+7","angleUnit":"deg"}`
+	original := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
+	if _, err := db.ExecContext(t.Context(), "UPDATE calculations SET facts_json = 'broken optional facts' WHERE id = ?", original.Calculation.ID); err != nil {
+		t.Fatal(err)
+	}
+	handler = newHandler(db, nil, true, true)
+	session := decodeBody[contracts.SessionResponse](t, apiRequest(handler, owner, http.MethodGet, "/api/session", ""), http.StatusOK)
+	if !session.DiscoveriesAvailable || len(session.Achievements) != 1 || session.Achievements[0].ID != "six_seven" ||
+		!session.Achievements[0].EarnedAt.Equal(original.Calculation.CreatedAt) {
+		t.Fatalf("optional facts blocked authoritative discovery repair: %+v", session)
+	}
+	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusServiceUnavailable)
+	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodGet, "/api/history", ""), http.StatusServiceUnavailable)
+	// Repair optional metadata without replacing the source calculation. A retry
+	// must replay the saved outcome and never announce the recovered award.
+	if _, err := db.ExecContext(t.Context(), "UPDATE calculations SET facts_json = NULL WHERE id = ?", original.Calculation.ID); err != nil {
+		t.Fatal(err)
+	}
+	replayed := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
+	if replayed.Calculation.ID != original.Calculation.ID || replayed.Calculation.Outcome.Value != "67" ||
+		!replayed.Calculation.CreatedAt.Equal(original.Calculation.CreatedAt) || len(replayed.Achievements) != 0 || len(replayed.FunEvents) != 0 {
+		t.Fatalf("facts repair changed or re-announced committed action: %+v", replayed)
+	}
+	page := decodeBody[contracts.HistoryPage](t, apiRequest(handler, owner, http.MethodGet, "/api/history", ""), http.StatusOK)
+	if len(page.Items) != 1 || page.Items[0].ID != original.Calculation.ID || page.Items[0].Facts != nil {
+		t.Fatalf("facts repair changed owned history: %+v", page)
+	}
+}
+
 func TestUnknownAPIRoutesRemainJSONWithoutSideEffects(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, false)

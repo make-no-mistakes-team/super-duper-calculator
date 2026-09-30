@@ -1,58 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiStatusError, getCapabilities, getHistory, getStatistics, postCalculation, startSession } from './api';
 import { CalculatorInput } from './CalculatorInput';
-import type { Achievement, AngleUnit, CalculationRecord, CalculationRequest, Capabilities, CalculationResponse, DiscoveryDefinition, FunEvent, MathError, SessionResponse } from './contracts';
+import type { Achievement, AngleUnit, CalculationRecord, CalculationRequest, Capabilities, DiscoveryDefinition, FunEvent, SessionResponse } from './contracts';
 import { History } from './features/history/History';
 import { AchievementCollection } from './features/discoveries/AchievementCollection';
 import { DiscoveryNotice } from './features/discoveries/DiscoveryNotice';
 import { ComicIncident } from './features/discoveries/ComicIncident';
 import { PreferencesPanel, usePreferences } from './features/preferences/Preferences';
 import { StatisticsPanel } from './features/statistics/StatisticsPanel';
+import { ResultView } from './features/calculation/ResultView';
+import { outcomeAnnouncement, requestError, unavailableExtension, type CopyStatus, type ResultState } from './features/calculation/presentation';
+import { useToolController, type CalculatorTool } from './features/tools/useToolController';
 import { getMessages } from './i18n';
 
-type ResultState =
-  | { kind: 'idle' }
-  | { kind: 'loading'; request: CalculationRequest }
-  | { kind: 'record'; record: CalculationRecord; publication: CalculationResponse['publication']['status'] }
-  | { kind: 'failed'; message: string; retryable: boolean; request: CalculationRequest };
-
 const messages = getMessages('ru');
-const networkError = 'Не удалось сохранить вычисление. Проверьте соединение и повторите попытку.';
-const errorAdvice: Record<string, string> = {
-  SYNTAX_ERROR: 'Проверьте скобки и порядок операций.',
-  UNKNOWN_IDENTIFIER: 'Проверьте имя функции. Доступные функции — на панели «Функции».',
-  UNSUPPORTED_FEATURE: 'Используйте операции, доступные на панели инструментов.',
-  WRONG_ARITY: 'Проверьте число аргументов функции. Разделяйте аргументы запятыми.',
-  DIVISION_BY_ZERO: 'Измените знаменатель: делить на ноль нельзя.',
-  DOMAIN_ERROR: 'Проверьте аргументы функции: для этих значений результат не определён.',
-  NUMERIC_OVERFLOW: 'Уменьшите числа или степень в выражении.',
-};
-const syntaxExpectations: Record<string, string> = {
-  operand: 'Не хватает числа или выражения.',
-  operator: 'Между частями выражения нужен оператор.',
-  digit: 'В числе не хватает цифры.',
-  exponent: 'После e укажите степень, например 1e3.',
-  ')': 'Не хватает закрывающей скобки.',
-  '(': 'Не хватает открывающей скобки.',
-};
-
-function mathErrorText(error: MathError, capabilities: Capabilities | null): string {
-  const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 80) : null;
-  const name = text(error.params?.name);
-  if (error.code === 'UNKNOWN_IDENTIFIER' && name) return `Неизвестное имя «${name}».`;
-  if (error.code === 'WRONG_ARITY' && name) {
-    const arities = capabilities && Object.hasOwn(capabilities.functions, name) ? capabilities.functions[name] : undefined;
-    return `Неверное число аргументов у ${name}.${arities ? ` Ожидается: ${arities.join(' или ')}.` : ''}`;
-  }
-  if (error.code === 'SYNTAX_ERROR') {
-    const token = text(error.params?.expected);
-    const expectation = token && Object.hasOwn(syntaxExpectations, token) ? syntaxExpectations[token] : undefined;
-    if (expectation) return expectation;
-    const unexpected = text(error.params?.unexpected);
-    if (unexpected) return `Неожиданный символ «${unexpected}».`;
-  }
-  return messages.history.mathErrors[error.code] ?? messages.history.mathErrorUnknown;
-}
+const calculationMessages = messages.calculation;
 
 function mergeAchievements(previous: Achievement[], incoming: Achievement[]): Achievement[] {
   if (incoming.length === 0) return previous;
@@ -62,51 +24,6 @@ function mergeAchievements(previous: Achievement[], incoming: Achievement[]): Ac
     if (!existing || award.earnedAt < existing.earnedAt) awards.set(award.id, award);
   }
   return [...awards.values()];
-}
-
-function unavailableExtension(expression: string, capabilities: Capabilities | null): string | null {
-  if (capabilities === null) return null;
-  if (!capabilities.features.factorial && expression.includes('!')) return 'факториал';
-  if (!capabilities.features.percentage && expression.includes('%')) return 'проценты';
-  if (!capabilities.features.remainder && /\bmod\s*\(/.test(expression)) return 'остаток от деления';
-  return null;
-}
-
-function displayValue(value: string) {
-  const number = Number(value);
-  const text = Object.is(number, -0) ? '-0' : String(Number(number.toPrecision(12)));
-  return { text, approximate: !Object.is(Number(text), number) };
-}
-
-function requestError(error: ApiStatusError): { message: string; retryable: boolean } {
-  const { status } = error;
-  if (status === 413) {
-    return {
-      message: 'Превышены ограничения запроса: длина выражения, число токенов или глубина вложенности.',
-      retryable: false,
-    };
-  }
-  if (status === 400) {
-    return { message: 'Некорректный запрос. Проверьте выражение и настройки.', retryable: false };
-  }
-  if (status === 409) {
-    return { message: 'Действие уже использовано для другого выражения.', retryable: false };
-  }
-  if (status === 401) {
-    return { message: 'Сессия истекла. Повторите попытку, чтобы создать новую.', retryable: true };
-  }
-  if (status === 429) {
-    return { message: error.retryAfterSeconds === null
-      ? 'Слишком много запросов. Повторите попытку позже.'
-      : `Слишком много запросов. Повторите через ${error.retryAfterSeconds} с.`, retryable: true };
-  }
-  if (status === 408) {
-    return { message: 'Время ожидания истекло. Повторите попытку.', retryable: true };
-  }
-  if (status >= 400 && status < 500) {
-    return { message: 'Сервер отклонил запрос. Проверьте его и отправьте заново.', retryable: false };
-  }
-  return { message: networkError, retryable: true };
 }
 
 export default function App() {
@@ -119,9 +36,9 @@ export default function App() {
   const [historyError, setHistoryError] = useState(false);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
   const [restoredRecord, setRestoredRecord] = useState<CalculationRecord | null>(null);
-  const [activeTool, setActiveTool] = useState<'functions' | 'keypad' | 'history' | 'settings' | null>(null);
+  const [activeTool, setActiveTool] = useState<CalculatorTool | null>(null);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [discoveryCatalog, setDiscoveryCatalog] = useState<DiscoveryDefinition[]>([]);
   const [discoveriesAvailable, setDiscoveriesAvailable] = useState(false);
@@ -140,6 +57,7 @@ export default function App() {
   const sessionIdentity = useRef<string | null>(null);
   const sessionGeneration = useRef(0);
   const mounted = useRef(false);
+  const toolController = useToolController(activeTool, setActiveTool, incidentActive);
 
   const invalidateSession = useCallback(() => {
     sessionGeneration.current++;
@@ -298,7 +216,7 @@ export default function App() {
     copySequence.current++;
     setCopyStatus('idle');
     setRestoredRecord(null);
-    setAnnouncement('Вычисляем…');
+    setAnnouncement(calculationMessages.loading);
     setFunEvents([]);
     setResult({ kind: 'loading', request });
     try {
@@ -314,13 +232,7 @@ export default function App() {
       if (mounted.current && sequence === submissionSequence.current) {
         setResult({ kind: 'record', record: data.calculation, publication: data.publication.status });
         setFunEvents(data.funEvents ?? []);
-        const outcome = data.calculation.outcome;
-        if (outcome.kind === 'success') {
-          const value = displayValue(outcome.value);
-          setAnnouncement(`Результат: ${value.approximate ? 'приблизительно ' : ''}${value.text}.`);
-        } else {
-          setAnnouncement(`${outcome.error.stage === 'parse' ? 'Ошибка в записи выражения' : 'Ошибка вычисления'}: ${mathErrorText(outcome.error, capabilities)}`);
-        }
+        setAnnouncement(outcomeAnnouncement(data.calculation, capabilities, calculationMessages));
       }
       if (mounted.current) {
         setAchievements((previous) => mergeAchievements(previous, data.achievements ?? []));
@@ -331,10 +243,10 @@ export default function App() {
       if (mounted.current && identity === sessionIdentity.current && (generation === null || generation === sessionGeneration.current) && sequence === submissionSequence.current) {
         if (error instanceof ApiStatusError && error.status === 401) invalidateSession();
         const failure = error instanceof ApiStatusError
-          ? requestError(error)
+          ? requestError(error, calculationMessages)
           : error instanceof SyntaxError
-            ? { message: 'Не удалось прочитать ответ сервера. Повторите попытку.', retryable: true }
-            : { message: networkError, retryable: true };
+            ? { message: calculationMessages.requestErrors.unreadable, retryable: true }
+            : { message: calculationMessages.requestErrors.network, retryable: true };
         setResult({
           kind: 'failed',
           ...failure,
@@ -349,12 +261,11 @@ export default function App() {
     setExpression(record.expression);
     setAngleUnit(record.context.angleUnit);
     setRestoredRecord(record);
-    setActiveTool(null);
-    setAnnouncement(unavailableExtension(record.expression, capabilities)
+    toolController.focusEditor();
+    setAnnouncement(unavailableExtension(record.expression, capabilities, calculationMessages)
       ? 'Выражение восстановлено, но содержит недоступную операцию. Исправьте его перед вычислением.'
       : 'Выражение и угловой режим восстановлены из истории. Enter — вычислить снова.');
-    document.getElementById('expression')?.focus();
-  }, [capabilities]);
+  }, [capabilities, toolController]);
 
   const copyResult = useCallback(async (value: string) => {
     const sequence = ++copySequence.current;
@@ -362,24 +273,20 @@ export default function App() {
       await navigator.clipboard.writeText(value);
       if (sequence === copySequence.current) {
         setCopyStatus('copied');
-        setAnnouncement('Точное значение скопировано.');
+        setAnnouncement(calculationMessages.copyAnnouncement);
       }
     } catch {
       if (sequence === copySequence.current) {
         setCopyStatus('failed');
-        setAnnouncement('Не удалось скопировать. Выделите точное значение вручную.');
+        setAnnouncement(calculationMessages.copyFailedAnnouncement);
       }
     }
   }, []);
 
-  const outcome = result.kind === 'record' ? result.record.outcome : null;
-  const source = result.kind === 'record' ? result.record.expression : '';
-  const span = outcome?.kind === 'error' ? outcome.error.span : null;
-  const display = outcome?.kind === 'success' ? displayValue(outcome.value) : null;
-  const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(expression, capabilities);
+  const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(expression, capabilities, calculationMessages);
 
   return (
-    <main className="workspace">
+    <main className="workspace" onKeyDown={toolController.onKeyDown}>
       <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <header className="workspace-header">
         <h1 className="workspace-brand">
@@ -398,18 +305,7 @@ export default function App() {
         {(capabilities?.features.themes || capabilities?.features.achievements) && (
           <button id="tool-settings" className="header-settings" type="button" aria-label="Настройки"
             aria-expanded={activeTool === 'settings'} aria-controls={activeTool === 'settings' ? 'tool-bay' : undefined}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && activeTool !== null) {
-                event.preventDefault();
-                const trigger = document.getElementById(`tool-${activeTool}`);
-                setActiveTool(null);
-                trigger?.focus({ preventScroll: true });
-              }
-            }}
-            onClick={() => {
-              setActiveTool(activeTool === 'settings' ? null : 'settings');
-              if (activeTool !== 'settings') requestAnimationFrame(() => document.getElementById('tool-bay-heading')?.focus({ preventScroll: true }));
-            }}>
+            onClick={() => toolController.toggle('settings')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M4 7h16M4 17h16M8 4v6m8 4v6" stroke="currentColor" strokeWidth="2" />
             </svg><span>Настройки</span>
@@ -423,7 +319,7 @@ export default function App() {
         angleUnit={angleUnit}
         capabilities={capabilities}
         activeTool={activeTool}
-        onToolChange={setActiveTool}
+        toolController={toolController}
         onExpressionChange={(value) => { setExpression(value); setRestoredRecord(null); }}
         onAngleUnitChange={setAngleUnit}
         onSubmit={() => void submit({ requestId: crypto.randomUUID(), expression, angleUnit })}
@@ -446,7 +342,7 @@ export default function App() {
             messages={messages}
             onLoadMore={() => void loadHistory(nextCursor)}
             onSelect={selectHistory}
-            isUnsupported={(record) => unavailableExtension(record.expression, capabilities) !== null}
+            isUnsupported={(record) => unavailableExtension(record.expression, capabilities, calculationMessages) !== null}
           />
           {historyError && !historyLoading && (
             <button className="secondary-button" type="button" onClick={() => void loadHistory(null)}>Повторить загрузку</button>
@@ -463,92 +359,21 @@ export default function App() {
       )}
       <ComicIncident events={funEvents} enabled={preferences.humor && preferences.largeEffects}
         onActiveChange={setIncidentActive} />
-      {result.kind !== 'idle' && <section className="calculation-result" aria-labelledby="result-heading"
-        key={result.kind === 'record' ? result.record.id : result.kind}>
-        <h2 id="result-heading" className="visually-hidden">Результат</h2>
-        {result.kind === 'loading' && (
-          <p className="result-source result-pending">
-            Вычисляем: <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
-          </p>
-        )}
-        {result.kind === 'failed' && (
-          <div>
-            <p className="result-source">
-              <code>{result.request.expression}</code> · {messages.history.angleUnitLabel[result.request.angleUnit]}
-            </p>
-            <p className="result-error">{result.message}</p>
-            {result.retryable && (
-              <button className="secondary-button" type="button" onClick={() => void submit(result.request)}>Повторить</button>
-            )}
-          </div>
-        )}
-        {result.kind === 'record' && (
-          <div>
-            <p className="result-source">
-              <code>{source}</code><span className="result-angle" title={messages.history.angleUnitLabel[result.record.context.angleUnit]}>
-                {result.record.context.angleUnit.toUpperCase()}
-              </span>
-            </p>
-            {result.publication === 'published' && <p className="publication-status">Опубликовано в комнате</p>}
-            {result.publication === 'unavailable' && <p className="publication-status publication-status--warning">Вычисление сохранено лично; публикация недоступна.</p>}
-            {outcome?.kind === 'success' ? (
-              <>
-                <div className="result-answer">
-                  <p className="result-value"><span>{display?.approximate ? '≈' : '='}</span> {display?.text}</p>
-                  <button type="button" className="copy-result" title="Скопировать точное значение"
-                    aria-label={copyStatus === 'copied' ? 'Скопировано' : 'Скопировать точное значение'}
-                    onClick={() => void copyResult(outcome.value)}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      {copyStatus === 'copied'
-                        ? <path d="m4 12 5 5L20 6" stroke="currentColor" strokeWidth="2" />
-                        : <path d="M9 9h11v11H9zM5 15H3V3h12v2" stroke="currentColor" strokeWidth="2" />}
-                    </svg>
-                    <span>{copyStatus === 'copied' ? 'Скопировано' : 'Копировать'}</span>
-                  </button>
-                </div>
-                {display?.approximate && (
-                  <details className="full-value"><summary>Точное значение</summary><code>{outcome.value}</code></details>
-                )}
-                {copyStatus === 'failed' && <p className="copy-error">Не удалось скопировать. Выделите значение вручную: <code>{outcome.value}</code></p>}
-              </>
-            ) : outcome?.kind === 'error' ? (
-              <>
-                <p className="result-error">
-                  {mathErrorText(outcome.error, capabilities)}
-                </p>
-                <p className="error-stage">{outcome.error.stage === 'parse' ? 'При разборе выражения' : 'При вычислении'}</p>
-                <p className="error-advice">{errorAdvice[outcome.error.code] ?? 'Проверьте выражение и попробуйте снова.'}</p>
-                {span && (
-                  <code className="result-highlight">
-                    {source.slice(0, span.start)}
-                    <mark>{source.slice(span.start, span.end) || '│'}</mark>
-                    {source.slice(span.end)}
-                  </code>
-                )}
-                <button type="button" className="secondary-button" onClick={() => {
-                  setExpression(source);
-                  setAngleUnit(result.record.context.angleUnit);
-                  setRestoredRecord(null);
-                  setActiveTool(null);
-                  requestAnimationFrame(() => {
-                    const input = document.getElementById('expression');
-                    if (input instanceof HTMLTextAreaElement) {
-                      input.focus();
-                      input.setSelectionRange(span?.start ?? source.length, span?.end ?? source.length);
-                    }
-                  });
-                }}>{expression === source ? 'Исправить' : 'Вернуть выражение'}</button>
-              </>
-            ) : null}
-          </div>
-        )}
-      </section>}
+      <ResultView result={result} expression={expression} capabilities={capabilities}
+        messages={calculationMessages} copyStatus={copyStatus}
+        onCopy={(value) => void copyResult(value)} onRetry={(request) => void submit(request)}
+        onCorrect={(record) => {
+          setExpression(record.expression);
+          setAngleUnit(record.context.angleUnit);
+          setRestoredRecord(null);
+          const span = record.outcome.kind === 'error' ? record.outcome.error.span : null;
+          toolController.focusEditor({ selection: span ?? { start: record.expression.length, end: record.expression.length } });
+        }} />
       <DiscoveryNotice events={funEvents} catalog={discoveryCatalog} humorEnabled={preferences.humor && !incidentActive}
         onOpenCollection={() => {
-          setActiveTool('history');
+          toolController.open('history');
           setCollectionOpen(true);
           void refreshCollection();
-          requestAnimationFrame(() => document.getElementById('tool-bay-heading')?.focus({ preventScroll: true }));
         }} />
       {capabilitiesError && <p className="capabilities-note" role="status">Не удалось проверить возможности сервера. Доступны базовые операции.</p>}
       </CalculatorInput>

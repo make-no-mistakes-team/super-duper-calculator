@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,11 +61,15 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 		"!": {"5!", "120"}, "%": {"10%", "0.1"},
 	}
 	for _, operator := range advertised.Operators {
-		example, ok := operators[operator]
-		if !ok {
+		if _, ok := operators[operator]; !ok {
 			t.Fatalf("no example for advertised operator %q", operator)
 		}
+	}
+	for operator, example := range operators {
 		evaluate(example.expression, example.want, advertised.DefaultAngleUnit)
+		if !slices.Contains(advertised.Operators, operator) {
+			t.Errorf("executable operator %q is not advertised", operator)
+		}
 	}
 
 	type example struct {
@@ -85,16 +90,19 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 		"atan": {{[]string{"1"}, "45"}},
 		"mod":  {{[]string{"7", "3"}, "1"}},
 	}
-	for function, arities := range advertised.Functions {
-		examples := functions[function]
-		if len(examples) != len(arities) {
-			t.Fatalf("advertised %q arities %v have no matching examples", function, arities)
+	for function := range advertised.Functions {
+		if _, ok := functions[function]; !ok {
+			t.Fatalf("no example for advertised function %q", function)
 		}
-		for i, arity := range arities {
-			if len(examples[i].args) != arity {
-				t.Fatalf("%q advertises arity %d, example has %d", function, arity, len(examples[i].args))
-			}
-			evaluate(function+"("+strings.Join(examples[i].args, ",")+")", examples[i].want, advertised.DefaultAngleUnit)
+	}
+	for function, examples := range functions {
+		arities := make([]int, 0, len(examples))
+		for _, example := range examples {
+			evaluate(function+"("+strings.Join(example.args, ",")+")", example.want, advertised.DefaultAngleUnit)
+			arities = append(arities, len(example.args))
+		}
+		if !slices.Equal(advertised.Functions[function], arities) {
+			t.Errorf("executable function %q arities %v, advertised %v", function, arities, advertised.Functions[function])
 		}
 	}
 	evaluate("sin(pi/2)", "1", contracts.Radians)

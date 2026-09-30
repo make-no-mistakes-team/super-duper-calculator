@@ -1,14 +1,13 @@
 import { useRef, type ReactNode } from 'react';
 import type { AngleUnit, Capabilities } from './contracts';
-
-type Tool = 'functions' | 'keypad' | 'history' | 'settings';
+import type { CalculatorTool, ToolController } from './features/tools/useToolController';
 
 type CalculatorInputProps = {
   expression: string;
   angleUnit: AngleUnit;
   capabilities: Capabilities | null;
-  activeTool: Tool | null;
-  onToolChange: (tool: Tool | null) => void;
+  activeTool: CalculatorTool | null;
+  toolController: ToolController;
   onExpressionChange: (expression: string) => void;
   onAngleUnitChange: (angleUnit: AngleUnit) => void;
   onSubmit: () => void;
@@ -33,11 +32,11 @@ const functions = [
   { name: 'log', label: 'Логарифм log', example: 'log(8, 2)' },
   { name: 'exp', label: 'Экспонента', example: 'exp(2)' },
 ];
-const toolLabels: Record<Tool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История', settings: 'Настройки' };
-const tools: Tool[] = ['functions', 'keypad', 'history'];
+const toolLabels: Record<CalculatorTool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История', settings: 'Настройки' };
+const tools: CalculatorTool[] = ['functions', 'keypad', 'history'];
 
 export function CalculatorInput({
-  expression, angleUnit, capabilities, activeTool, onToolChange,
+  expression, angleUnit, capabilities, activeTool, toolController,
   onExpressionChange, onAngleUnitChange, onSubmit, history, settings, children,
 }: CalculatorInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -47,13 +46,6 @@ export function CalculatorInput({
   const nearLimit = expression.length >= expressionLimit * .9;
   const availableFunctions = functions.filter(({ name }) => capabilities === null || name in capabilities.functions);
 
-  function focusAt(position: number) {
-    requestAnimationFrame(() => {
-      inputRef.current?.focus({ preventScroll: true });
-      inputRef.current?.setSelectionRange(position, position);
-    });
-  }
-
   function insert(value: string, cursorOffset = value.length) {
     const input = inputRef.current;
     const start = input?.selectionStart ?? expression.length;
@@ -61,7 +53,11 @@ export function CalculatorInput({
     const next = expression.slice(0, start) + value + expression.slice(end);
     if (next.length > expressionLimit) return;
     onExpressionChange(next);
-    focusAt(start + cursorOffset);
+    toolController.focusEditor({
+      closeTool: false,
+      preventScroll: true,
+      selection: { start: start + cursorOffset, end: start + cursorOffset },
+    });
   }
 
   function insertFunction(name: string) {
@@ -81,27 +77,11 @@ export function CalculatorInput({
       if (code >= 0xdc00 && code <= 0xdfff && start > 0) start--;
     }
     onExpressionChange(expression.slice(0, start) + expression.slice(end));
-    focusAt(start);
-  }
-
-  function closeTool() {
-    const trigger = document.getElementById(`tool-${activeTool}`);
-    onToolChange(null);
-    trigger?.focus({ preventScroll: true });
-  }
-
-  function openTool(tool: Tool) {
-    if (activeTool === tool) { closeTool(); return; }
-    onToolChange(tool);
-    requestAnimationFrame(() => document.getElementById('tool-bay-heading')?.focus({ preventScroll: true }));
+    toolController.focusEditor({ closeTool: false, preventScroll: true, selection: { start, end: start } });
   }
 
   function submitExpression() {
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      const toolHadFocus = document.getElementById('tool-bay')?.contains(document.activeElement);
-      onToolChange(null);
-      if (toolHadFocus) requestAnimationFrame(() => submitRef.current?.focus({ preventScroll: true }));
-    }
+    toolController.prepareSubmit(submitRef.current);
     onSubmit();
   }
 
@@ -111,12 +91,7 @@ export function CalculatorInput({
   }
 
   return (
-    <div className="console-layout" data-tool-open={activeTool !== null} onKeyDown={(event) => {
-      if (event.key === 'Escape' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && activeTool !== null) {
-        event.preventDefault();
-        closeTool();
-      }
-    }}>
+    <div className="console-layout" data-tool-open={activeTool !== null}>
       <div className="editor-stack">
         <section className="editor-console" aria-label="Калькулятор">
           <div className="editor-topline">
@@ -130,7 +105,8 @@ export function CalculatorInput({
                 <option value="deg">DEG</option><option value="rad">RAD</option>
               </select>
               <button className="text-button" type="button" disabled={expression === ''} onClick={() => {
-                onExpressionChange(''); focusAt(0);
+                onExpressionChange('');
+                toolController.focusEditor({ closeTool: false, preventScroll: true, selection: { start: 0, end: 0 } });
               }}>Очистить</button>
             </div>
           </div>
@@ -158,7 +134,7 @@ export function CalculatorInput({
         </section>
         <nav className="tool-switches" aria-label="Инструменты калькулятора">
           {tools.map((tool) => <button key={tool} id={`tool-${tool}`} type="button" aria-expanded={activeTool === tool}
-            aria-controls={activeTool === tool ? 'tool-bay' : undefined} onClick={() => openTool(tool)}>
+            aria-controls={activeTool === tool ? 'tool-bay' : undefined} onClick={() => toolController.toggle(tool)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               {tool === 'functions' && <path d="M17 5h-4l-3 14H6M7 10h9" stroke="currentColor" strokeWidth="2" />}
               {tool === 'keypad' && <path d="M4 4h16v16H4zM8 8h2m4 0h2M8 12h2m4 0h2M8 16h2m4 0h2" stroke="currentColor" strokeWidth="2" />}
@@ -172,7 +148,7 @@ export function CalculatorInput({
       {activeTool !== null && <aside id="tool-bay" className="tool-bay" aria-labelledby="tool-bay-heading">
         <div className="tool-bay-header">
           <h2 id="tool-bay-heading" tabIndex={-1}>{toolLabels[activeTool]}</h2>
-          <button className="close-tool" type="button" aria-label="Закрыть панель инструментов" title="Закрыть · Esc" onClick={closeTool}>
+          <button className="close-tool" type="button" aria-label="Закрыть панель инструментов" title="Закрыть · Esc" onClick={() => toolController.close()}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" /></svg>
           </button>
         </div>
