@@ -26,6 +26,17 @@ The same browser identity has one public participant identity within the room.
 Count presence and collective achievement thresholds once per identity,
 regardless of tab count.
 
+On first room participation, assign a random English adjective and noun, each
+starting with a capital letter, such as `Brave Otter`. Names are unique within
+the room and persisted for each room and anonymous identity. Rejoining, opening
+another tab, and restarting the server preserve the name. A publication or
+reaction made through the API before joining also establishes the participant's
+name. The personal alias returned by `GET /api/session` is separate.
+
+The join snapshot's `participant` provides the requesting identity's public ID
+and room name. Show this name in the room interface, for example in its header.
+Always use public IDs to identify owners; names are display text.
+
 ## Default publication
 
 Each new deliberate calculation in room mode requests publication automatically.
@@ -85,6 +96,11 @@ secrets are never public event fields.
 Keep the visible and retained feed bounded. The initial target is 100 recent
 calculation events per room; older personal records remain in personal history.
 An interface may show a smaller window while keeping recent entries reachable.
+Show each entry's `participant.alias` as its author's name. Highlight own entries
+by comparing their `participant.id` with the snapshot's own participant ID.
+A client-side “Only mine” filter uses this same comparison over the retained
+100-entry feed. It does not expose a separate archive of older publications or
+replace personal history.
 
 ## Emoji reactions
 
@@ -100,7 +116,9 @@ If room reactions are included:
 Repeated identical requests do not increment a count. Removed or expired feed
 entries cannot be targeted to create invisible new activity.
 
-Update reaction counts in place, without producing individual toasts or scenes.
+Reaction stream updates include the acting public participant's ID and room
+name, including when a reaction is removed. Update reaction counts in place,
+without producing individual toasts or scenes.
 
 ## Presence and reconnection
 
@@ -136,6 +154,14 @@ Collective triggers:
 - preserve the mathematical result and normal input;
 - render in each viewer's selected UI language.
 
+Collective announcements identify the people involved using public participant
+objects containing `id` and `alias`. `shared_answer` names `triggeredBy` and
+exactly three distinct `contributors` whose published answers satisfy the rule,
+including the triggering participant. `peer_reviewed` names the calculation's
+`author` and the reaction's `triggeredBy`, alongside `eventId` and `authorId`.
+The interface must distinguish the author receiving the badge from the person
+whose reaction triggered it.
+
 ## Degradation and control
 
 Calculation and persistence do not depend on an open SSE connection.
@@ -157,6 +183,10 @@ With at least two independent browser identities:
 - join and exchange real calculation events;
 - confirm private history and private-mode calculations remain private;
 - verify angle context and event order;
+- verify unique English room names, stable across tabs, rejoining, and restart;
+- verify attribution of calculations, reactions, and collective announcements;
+- verify own-entry highlighting and filtering use participant IDs and only the
+  retained room feed;
 - disconnect and reconnect without duplicates;
 - continue calculating when live updates fail.
 

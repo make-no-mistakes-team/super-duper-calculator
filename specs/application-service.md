@@ -472,7 +472,16 @@ are in the [room API guide](../docs/multiplayer-api.md). The guide is also the
 handoff contract for the room interface.
 
 Room snapshots identify the room, its current stream epoch and sequence,
-approximate presence, recent public events, and reaction aggregates.
+approximate presence, recent public events, and reaction aggregates. The
+snapshot's `participant` identifies the requesting identity by public ID and its
+persisted room alias. On first participation, assign a unique room name composed
+of a random English adjective and noun with initial capitals, such as `Brave
+Otter`. Keep this room identity stable across tabs, rejoining, and restart; it is
+separate from the personal alias returned by `GET /api/session`.
+
+Clients identify own feed entries by comparing `calculation.participant.id`
+with `snapshot.participant.id`. Highlighting and an optional “Only mine” filter
+operate on the retained 100-entry room feed, not a full publication archive.
 
 A successful public calculation event contains only:
 
@@ -491,7 +500,11 @@ Reconnect uses `Last-Event-ID`. Replay retained events or send a fresh snapshot.
 Restoring a snapshot must suppress old joke and achievement announcements.
 
 Reaction requests set one allowed reaction ID or `null`; they do not increment
-a client-supplied counter. Detailed room behavior is in
+a client-supplied counter. Reaction stream changes include the acting public
+`participant` (`id`, `alias`) and retain `participantId` with the same ID.
+Collective announcement parameters identify their participants: `shared_answer`
+includes `triggeredBy` and exactly three `contributors`; `peer_reviewed` includes
+`author`, `triggeredBy`, `eventId`, and `authorId`. Detailed room behavior is in
 [Multiplayer](multiplayer.md).
 
 ## Localization boundary

@@ -101,7 +101,7 @@ returns HTTP 200:
     "epoch": "65031b13921475868f26c58a",
     "sequence": 1,
     "publicationEnabled": true,
-    "participant": {"id": "opaque-public-participant-id", "alias": "Гость A12B34CD"},
+    "participant": {"id": "opaque-public-participant-id", "alias": "Brave Otter"},
     "presence": 1,
     "aggregates": {"publishedCalculations": 0, "activeReactions": 0},
     "calculations": [],
@@ -109,6 +109,16 @@ returns HTTP 200:
   }
 }
 ```
+
+`snapshot.participant` is the requesting identity's public identity in this
+room. Display its `alias` in the room header. On first room participation the
+server randomly assigns an English adjective and noun, each starting with a
+capital letter, for example `Brave Otter`. The name is unique within the room
+and persisted for that room and anonymous identity. Other tabs, later joins,
+and server restarts return the same name. Publishing or reacting through the
+API before joining also establishes the participant's name. A new anonymous
+identity receives a new name; the display alias returned by `GET /api/session`
+is separate and must not be used as the room name.
 
 Each join creates a view for one tab. `viewId` is an opaque 32-character string,
 bound to the cookie. It is not the public participant ID and must not be shared
@@ -132,7 +142,7 @@ participants. An individual entry has this shape:
 {
   "id": "e3f0ea96cd12490ab7e8e3dcf5eef541",
   "order": 12,
-  "participant": {"id": "opaque-public-participant-id", "alias": "Гость A12B34CD"},
+  "participant": {"id": "opaque-public-participant-id", "alias": "Brave Otter"},
   "expression": "6*7",
   "value": "42",
   "angleUnit": "deg",
@@ -148,6 +158,14 @@ participants. An individual entry has this shape:
 zero. `achievementIds` currently contains only `peer_reviewed` when earned.
 Treat every public string as text. The public event ID differs from the private
 calculation ID. Ordering gaps are allowed; use IDs for deduplication.
+
+For each feed entry, show `participant.alias` as the author's name. To highlight
+own calculations or implement a “Only mine” filter, compare the entry's
+`participant.id` with `snapshot.participant.id`. Do not compare names or send an
+owner ID to the server. Apply this filter locally to the retained room feed:
+it shows only the requesting participant's entries among the latest 100 room
+calculations, not every calculation they have ever published. Keep the complete
+retained feed in client state so changing the filter does not require a rejoin.
 
 `aggregates.publishedCalculations` is the persistent total of successfully
 published calculations in this room, including entries already evicted from
@@ -212,7 +230,11 @@ and `order`. Use named listeners (`addEventListener`) for these events:
 | `snapshot` | The snapshot object shown above. Replace current room state. |
 | `presence` | `{ "participants": 2 }`; replace approximate presence. |
 | `calculation` | `{ "calculation": <entry>, "aggregates": {"publishedCalculations": 12, "activeReactions": 3}, "funEvents": [...] }`; append/deduplicate by entry ID and retain the last 100. |
-| `reaction` | `{ "eventId": "…", "participantId": "…", "reactionId": "applause", "reactions": {...}, "achievementIds": [...], "aggregates": {"publishedCalculations": 12, "activeReactions": 4}, "funEvents": [...] }`; replace counts and badges. `reactionId` is null on removal. |
+| `reaction` | `{ "eventId": "…", "participantId": "…", "participant": {"id": "…", "alias": "Brave Otter"}, "reactionId": "applause", "reactions": {...}, "achievementIds": [...], "aggregates": {"publishedCalculations": 12, "activeReactions": 4}, "funEvents": [...] }`; replace counts and badges. `reactionId` is null on removal. |
+
+In a `reaction` event, `participant` identifies the person changing or removing
+the reaction. Its `id` equals the retained `participantId` field. Use its `alias`
+when displaying who performed the action, including a removal.
 
 Both mutation events carry complete authoritative `aggregates`; replace the
 displayed counters rather than incrementing them or adding the payload values.
@@ -266,6 +288,7 @@ HTTP 200 returns:
 ```json
 {
   "eventId": "e3f0ea96cd12490ab7e8e3dcf5eef541",
+  "participant": {"id": "opaque-public-participant-id", "alias": "Brave Otter"},
   "reactionId": "applause",
   "reactions": {"applause": 1},
   "achievementIds": [],
@@ -298,14 +321,39 @@ Collective announcements have the existing fun-event shape:
   "ruleId": "shared_answer",
   "kind": "scene",
   "scope": "room",
-  "params": {},
+  "params": {
+    "triggeredBy": {"id": "participant-c", "alias": "Calm Robin"},
+    "contributors": [
+      {"id": "participant-c", "alias": "Calm Robin"},
+      {"id": "participant-a", "alias": "Brave Otter"},
+      {"id": "participant-b", "alias": "Bright Fox"}
+    ]
+  },
   "createdAt": "2026-09-30T12:00:00Z",
   "expiresAt": "2026-09-30T12:00:10Z"
 }
 ```
 
-`peer_reviewed` uses `kind: "comment"` and params containing `eventId` and
-`authorId`. Badge assignment is independent of announcement pacing. Enforce a
+For `shared_answer`, `params.triggeredBy` is the participant whose calculation
+triggered the scene. `params.contributors` contains exactly three distinct
+public participants whose published answers satisfied the rule, including the
+triggering participant. Each participant has `id` and `alias`.
+
+`peer_reviewed` uses `kind: "comment"` with these parameters:
+
+```json
+{
+  "eventId": "e3f0ea96cd12490ab7e8e3dcf5eef541",
+  "authorId": "participant-a",
+  "author": {"id": "participant-a", "alias": "Brave Otter"},
+  "triggeredBy": {"id": "participant-d", "alias": "Gentle Owl"}
+}
+```
+
+`author` identifies the author of the awarded calculation; `authorId` equals
+`author.id`. `triggeredBy` identifies the person whose reaction reached the
+threshold. Display these roles distinctly when naming participants in an
+announcement. Badge assignment is independent of announcement pacing. Enforce a
 15-second view cooldown for ordinary comments in the client; the server enforces
 the 120-second room cooldown for the large `shared_answer` scene. Translate
 `ruleId` in the viewer's language; no server prose needs to be displayed verbatim.
