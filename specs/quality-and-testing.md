@@ -128,9 +128,22 @@ layout, motion, and interaction changes.
 
 `make check-browser` builds the real application and runs the repository's
 Chromium scenarios with per-test temporary SQLite files and browser identities.
-The [build and check instructions](../README.md#build-and-check) describe browser
-provisioning and failure reports. Network interceptions may delay real replies
-or simulate failure; they must not replace calculation or history data.
+After `make setup`, provision Chromium once:
+
+```sh
+(cd web && npx --no-install playwright install --with-deps chromium)
+make check-browser
+```
+
+The installer downloads the pinned browser and installs its system dependencies;
+on Linux this may require sudo. Installation is separate from `make setup` and
+`make check`, which do not require a browser.
+
+The HTML report is in `web/playwright-report/`; failure screenshots, traces,
+and server logs are in `web/test-results/`. Both directories are ignored by Git.
+Inspect the report with `(cd web && npx --no-install playwright show-report)`.
+Network interceptions may delay real replies or simulate failure; they must not
+replace calculation or history data.
 
 ## Optional presentation checks
 

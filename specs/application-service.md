@@ -15,6 +15,28 @@ must preserve this model through a proxy or equivalent arrangement.
 The contracts below fix cross-boundary meaning. Internal database layout,
 parser libraries, and component structure remain implementation choices.
 
+## Local configuration
+
+The `make` tasks load `.env`; exported shell variables take precedence.
+`make setup` copies [.env.example](../.env.example) only when `.env` is missing.
+Keep it local and compare it with the example when settings change.
+The executable itself does not load `.env`; export its configuration when
+launching a built or downloaded application.
+
+- `HTTP_ADDR` defaults to `127.0.0.1:8080`. If it changes during development,
+  update `API_PROXY_TARGET` too; Vite defaults to `http://127.0.0.1:8080`.
+- `PUBLIC_ORIGIN` is the browser-facing HTTPS origin behind a reverse proxy,
+  without a path or trailing slash. It enables Secure cookies and validates
+  mutation origins. Leave it unset for local HTTP development.
+- `DATABASE_PATH` defaults to `data/calculator.sqlite`. Relative paths use the
+  process's working directory; `make` starts Go at the checkout root. Deployments
+  should use a stable absolute path.
+- `WEB_ASSETS_DIR` selects a built client containing `index.html`; by default,
+  Go uses `web` beside its executable. Missing or invalid assets stop startup.
+  Keep the database outside this directory.
+- `STATISTICS_ENABLED` and `ACHIEVEMENTS_ENABLED` default to `true`. Either can
+  be disabled without disabling calculation or personal history.
+
 ## Database configuration
 
 Use SQLite in development, integration tests, and deployment through the

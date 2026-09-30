@@ -49,6 +49,31 @@ The downloaded build must start without the repository, development tools,
 a Node runtime, or external network access. Initialize a separate local
 database; public history is not synchronized to it.
 
+The automated release workflow currently produces
+`calculator-linux-amd64.tar.gz`. Extract it into an empty directory:
+
+```sh
+mkdir calculator-release
+tar -xzf calculator-linux-amd64.tar.gz -C calculator-release
+cd calculator-release
+HTTP_ADDR=127.0.0.1:8088 DATABASE_PATH="$PWD/state/calculator.sqlite" ./calculator
+```
+
+Open <http://127.0.0.1:8088>. The binary does not load `.env`; export any settings
+it needs. Restart with the same database path and browser identity to retain
+history.
+
+For another OS or CPU architecture, build on the target device after dependency
+setup and [browser provisioning](quality-and-testing.md#real-client-verification):
+
+```sh
+make setup
+make check
+make check-browser
+make build
+tar -czf calculator-local.tar.gz -C bin calculator web
+```
+
 ## Rehearsal
 
 Rehearse the selected artifact on the presentation device with external
