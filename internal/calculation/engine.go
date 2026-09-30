@@ -7,8 +7,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 )
@@ -61,10 +59,10 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 
 	// Facts exist only for parsed expressions; an evaluation error keeps them.
 	facts := &contracts.CalculationFacts{Operators: map[string]int{}, Functions: map[string]int{}}
-	tokens, starts, merr := tokenize(in.Expression)
+	stream, merr := newTokenStream(in.Expression)
 	var expr expr
 	if merr == nil {
-		expr, merr = parse(tokens, starts, unit, facts)
+		expr, merr = parse(stream, unit, facts)
 	}
 	if merr != nil {
 		if merr.Code == contracts.ErrorExpressionLimit {
@@ -84,140 +82,6 @@ func (engine) Evaluate(ctx context.Context, in Input) (Evaluation, error) {
 		Kind:  contracts.OutcomeSuccess,
 		Value: strconv.FormatFloat(v, 'g', -1, 64),
 	}, Facts: facts}, nil
-}
-
-// tokenize splits expression into numbers ("12", ".5", "1.25e-3"), names,
-// operators, parentheses and commas. Tokens are lowercase ("1E5" -> "1e5",
-// "SIN" -> "sin"). Unary signs stay separate tokens: -2^2 is "-" "2" "^" "2".
-// starts[k] is the byte offset of tokens[k]. Only ASCII is accepted.
-func tokenize(expression string) ([]string, []int, *contracts.MathError) {
-	length := 0
-	for _, r := range expression {
-		length += utf16.RuneLen(r)
-		if length > maxLength {
-			return nil, nil, &contracts.MathError{Code: contracts.ErrorExpressionLimit, Stage: contracts.StageParse,
-				Params: map[string]any{"length": maxLength}}
-		}
-	}
-
-	tokens := make([]string, 0, maxTokens)
-	starts := make([]int, 0, maxTokens)
-	var leadingUnknown *contracts.MathError
-	for i := 0; i < len(expression); {
-		start := i
-		b := expression[i]
-		switch {
-		case b == ' ', b == '\t', b == '\n', b == '\r':
-			i++
-
-		case b == '+', b == '-', b == '*', b == '/', b == '^', b == '(', b == ')', b == ',', b == '!', b == '%':
-			tokens = append(tokens, expression[i:i+1])
-			i++
-
-		case b >= '0' && b <= '9', b == '.':
-			j := i
-			digits := 0
-			for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
-				j++
-				digits++
-			}
-			if j < len(expression) && expression[j] == '.' {
-				j++
-				for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
-					j++
-					digits++
-				}
-			}
-			if digits == 0 {
-				return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
-					Params: map[string]any{"expected": "digit"}, Span: &contracts.SourceSpan{Start: i, End: j}}
-			}
-
-			if j < len(expression) {
-				switch expression[j] {
-				case 'E':
-					fallthrough
-				case 'e':
-					e := j
-					j++
-					if j < len(expression) && (expression[j] == '+' || expression[j] == '-') {
-						j++
-					}
-					start := j
-					for j < len(expression) && expression[j] >= '0' && expression[j] <= '9' {
-						j++
-					}
-					if j == start {
-						return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
-							Params: map[string]any{"expected": "exponent"}, Span: &contracts.SourceSpan{Start: e, End: j}}
-					}
-				}
-			}
-
-			// 1.2.3, 1e5e3 and 2pi (no implicit multiplication) end up here.
-			if j < len(expression) {
-				switch c := expression[j]; {
-				case c >= 'A' && c <= 'Z':
-					fallthrough
-				case c >= 'a' && c <= 'z', c == '.':
-					return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
-						Params: map[string]any{"unexpected": string(c)}, Span: &contracts.SourceSpan{Start: j, End: j + 1}}
-				}
-			}
-
-			tokens = append(tokens, strings.ToLower(expression[i:j]))
-			i = j
-
-		case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z':
-			word := make([]byte, 0, 8)
-			j := i
-		scan:
-			for ; j < len(expression); j++ {
-				c := expression[j]
-				switch {
-				case c >= 'A' && c <= 'Z':
-					c |= 0x20
-					fallthrough
-				case c >= 'a' && c <= 'z':
-					word = append(word, c)
-				default:
-					break scan
-				}
-			}
-			name := string(word)
-			if len(tokens) == 0 {
-				if _, known := operators[name]; !known {
-					// A later square bracket must not hide the first invalid
-					// token in an expression that begins with an unknown name.
-					span := contracts.SourceSpan{Start: i, End: i + 1}
-					leadingUnknown = &contracts.MathError{Code: contracts.ErrorUnknownIdentifier,
-						Stage: contracts.StageParse, Params: map[string]any{"name": name}, Span: &span}
-				}
-			}
-			tokens = append(tokens, name)
-			i = j
-
-		default:
-			if leadingUnknown != nil && (b == '[' || b == ']') {
-				return nil, nil, leadingUnknown
-			}
-			if b < 0x80 {
-				return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
-					Params: map[string]any{"unexpected": expression[i : i+1]}, Span: &contracts.SourceSpan{Start: i, End: i + 1}}
-			}
-			r, _ := utf8.DecodeRuneInString(expression[i:])
-			return nil, nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse,
-				Params: map[string]any{"unexpected": string(r)}, Span: &contracts.SourceSpan{Start: i, End: i + utf16.RuneLen(r)}}
-		}
-		if len(starts) < len(tokens) {
-			starts = append(starts, start)
-		}
-		if len(tokens) > maxTokens {
-			return nil, nil, &contracts.MathError{Code: contracts.ErrorExpressionLimit, Stage: contracts.StageParse,
-				Params: map[string]any{"tokens": maxTokens}}
-		}
-	}
-	return tokens, starts, nil
 }
 
 // expr is a parsed expression: numbers and operations alike are functions,
@@ -375,13 +239,13 @@ var operators = map[string]operator{
 	}},
 }
 
-// parse builds an expr from tokenize output with the shunting-yard algorithm:
+// parse builds an expr from tokens requested on demand with the shunting-yard algorithm:
 // instead of writing postfix notation, every operator popped from the stack
 // takes its operands from the operand stack and pushes back one expr.
 // Every binary operator and function call is one operation recorded in facts;
 // facts.Depth is the deepest parenthesis nesting. Every operand carries the
 // span of its source text, evaluation errors point at the failed operation.
-func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contracts.CalculationFacts) (expr, *contracts.MathError) {
+func parse(stream *tokenStream, unit contracts.AngleUnit, facts *contracts.CalculationFacts) (expr, *contracts.MathError) {
 	type operand struct {
 		expr expr
 		span contracts.SourceSpan
@@ -390,18 +254,17 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		key string // operators key or "("
 		at  int    // token index
 	}
-	operands := make([]operand, 0, len(tokens))
-	ops := make([]pending, 0, len(tokens))
+	operands := make([]operand, 0, maxTokens)
+	ops := make([]pending, 0, maxTokens)
+	tokens := make([]string, 0, maxTokens)
+	starts := make([]int, 0, maxTokens)
 	depth := 0
 	expectOperand := true
 
 	fail := func(code contracts.MathErrorCode, span contracts.SourceSpan, params map[string]any) *contracts.MathError {
 		return &contracts.MathError{Code: code, Stage: contracts.StageParse, Params: params, Span: &span}
 	}
-	end := 0 // offset after the last token: "5*(" fails at {3, 3}
-	if len(tokens) > 0 {
-		end = starts[len(tokens)-1] + len(tokens[len(tokens)-1])
-	}
+	end := 0 // offset after the last consumed token: "5*(" fails at {3, 3}
 
 	reduce := func() *contracts.MathError {
 		p := ops[len(ops)-1]
@@ -460,8 +323,20 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 		return nil
 	}
 
-	for k, t := range tokens {
-		at := contracts.SourceSpan{Start: starts[k], End: starts[k] + len(t)}
+	for {
+		found, lexErr := stream.next()
+		if lexErr != nil {
+			return nil, lexErr
+		}
+		if found.text == "" {
+			break
+		}
+		k := len(tokens)
+		t := found.text
+		at := found.span()
+		tokens = append(tokens, t)
+		starts = append(starts, found.start)
+		end = at.End
 		switch c := t[0]; {
 		case t == "(":
 			if !expectOperand { // 2(3), (1)(2)
@@ -500,7 +375,14 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 			// may still take its base after a parenthesized operand:
 			// log (log 100), 2.
 			if len(ops) > 0 && operators[ops[len(ops)-1].key].fn {
-				continuesPrefixLog := ops[len(ops)-1].key == "log" && k+1 < len(tokens) && tokens[k+1] == ","
+				continuesPrefixLog := false
+				if ops[len(ops)-1].key == "log" {
+					next, lexErr := stream.peek()
+					if lexErr != nil {
+						return nil, lexErr
+					}
+					continuesPrefixLog = next.text == ","
+				}
 				for i := len(ops) - 2; continuesPrefixLog && i >= 0; i-- {
 					if ops[i].key == "(" {
 						continuesPrefixLog = i == 0 || !operators[ops[i-1].key].fn
@@ -609,12 +491,17 @@ func parse(tokens []string, starts []int, unit contracts.AngleUnit, facts *contr
 				key = t
 			}
 			if o, ok := operators[key]; ok && (o.fn || o.arity < 2) {
-				if t == "mod" && (k+1 == len(tokens) || tokens[k+1] != "(") {
-					if k+1 == len(tokens) {
+				if t == "mod" {
+					next, lexErr := stream.peek()
+					if lexErr != nil {
+						return nil, lexErr
+					}
+					if next.text == "" {
 						return nil, fail(contracts.ErrorSyntax, contracts.SourceSpan{Start: at.End, End: at.End}, map[string]any{"expected": "("})
 					}
-					next := contracts.SourceSpan{Start: starts[k+1], End: starts[k+1] + len(tokens[k+1])}
-					return nil, fail(contracts.ErrorSyntax, next, map[string]any{"expected": "("})
+					if next.text != "(" {
+						return nil, fail(contracts.ErrorSyntax, next.span(), map[string]any{"expected": "("})
+					}
 				}
 				ops = append(ops, pending{key: key, at: k}) // prefix: pushed without popping anything
 				if o.arity == 0 {                           // a constant is an operand at once

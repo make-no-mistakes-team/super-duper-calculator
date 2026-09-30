@@ -67,14 +67,30 @@ test('syntax errors remain saved and correction returns focus to the offending e
   expect(repeated.calculation.outcome.error.code).toBe('SYNTAX_ERROR');
 });
 
-test('an unknown leading name is highlighted before a later square bracket', async ({ page }) => {
+test('an unknown name is highlighted and selected before a later invalid character', async ({ page }) => {
   await openCalculator(page);
-  const malformed = 'asdasdfasdasfasfasfASFASFASFAFASFASFASFAFASFASFASFASFASFASFASFASFASFdf]asd]gla]hdgasd[gksdgdsgsd DeG';
-  const result = await calculate(page, malformed);
-  if (result.calculation.outcome.kind !== 'error') throw new Error('Expected a mathematical error');
-  expect(result.calculation.outcome.error.code).toBe('UNKNOWN_IDENTIFIER');
-  expect(result.calculation.outcome.error.span).toEqual({ start: 0, end: 1 });
-  await expect(page.locator('.result-highlight mark')).toHaveText('a');
+  const longInput = 'asdasdfasdasfasfasfASFASFASFAFASFASFASFAFASFASFASFASFASFASFASFASFASFdf]asd]gla]hdgasd[gksdgdsgsd DeG';
+  const cases = [
+    { expression: 'unknown', start: 0, name: 'unknown' },
+    { expression: 'unknown]', start: 0, name: 'unknown' },
+    { expression: 'unknown@', start: 0, name: 'unknown' },
+    { expression: '-unknown]', start: 1, name: 'unknown' },
+    { expression: '(unknown]', start: 1, name: 'unknown' },
+    { expression: longInput, start: 0, name: longInput.slice(0, longInput.indexOf(']')) },
+  ];
+  for (const { expression, start, name } of cases) {
+    const result = await calculate(page, expression);
+    if (result.calculation.outcome.kind !== 'error') throw new Error('Expected a mathematical error');
+    expect(result.calculation.outcome.error.code).toBe('UNKNOWN_IDENTIFIER');
+    expect(result.calculation.outcome.error.span).toEqual({ start, end: start + name.length });
+    await expect(page.locator('.result-highlight mark')).toHaveText(name);
+    await page.getByRole('button', { name: 'Исправить', exact: true }).click();
+    await expect(page.locator('#expression')).toBeFocused();
+    expect(await page.locator('#expression').evaluate((element) => {
+      if (!(element instanceof HTMLTextAreaElement)) throw new Error('Expected the expression editor');
+      return { start: element.selectionStart, end: element.selectionEnd };
+    })).toEqual({ start, end: start + name.length });
+  }
 });
 
 test('copy uses the canonical binary64 value rather than the rounded display', async ({ page, context }) => {

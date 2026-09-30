@@ -153,6 +153,15 @@ and a relevant source span where available. Spans are zero-based, half-open
 UTF-16 code-unit offsets into the original submitted string, matching browser
 string indexing. A missing operand at end of input may use a zero-width span.
 
+For an input within the request length limit, the parser requests tokens in
+source order and reports the first lexical or grammatical error it encounters.
+A later invalid character must not mask an earlier unknown identifier:
+`unknown`, `unknown]`, `unknown@`, `-unknown]`, and `(unknown]` all highlight
+the entire `unknown` token. At most one token of lookahead is buffered; the
+input and its prefixes are not retokenized or reparsed, so work stays linear in
+the input length. Arithmetic operators are evaluated only after the whole
+expression has parsed successfully.
+
 Error text is localized outside the engine. Programmer failures are service
 errors, not syntax errors attributed to the user.
 

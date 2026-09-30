@@ -111,10 +111,10 @@ func TestArithmeticErrors(t *testing.T) {
 
 		// Decimal commas, assignment, variables, strings, property access, calls.
 		{"1,5", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 1, End: 2}},
-		{"x=1", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 1, End: 2}},
+		{"x=1", "UNKNOWN_IDENTIFIER", "parse", contracts.SourceSpan{Start: 0, End: 1}},
 		{"2=2", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 1, End: 2}},
 		{`"2"`, "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 0, End: 1}},
-		{"a.b", "SYNTAX_ERROR", "parse", contracts.SourceSpan{Start: 1, End: 2}},
+		{"a.b", "UNKNOWN_IDENTIFIER", "parse", contracts.SourceSpan{Start: 0, End: 1}},
 		{"f(1)", "UNKNOWN_IDENTIFIER", "parse", contracts.SourceSpan{Start: 0, End: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
@@ -129,31 +129,58 @@ func TestArithmeticErrors(t *testing.T) {
 	}
 }
 
-func TestMalformedLeadingIdentifierPointsAtStart(t *testing.T) {
+func TestUnknownIdentifierPrecedesLaterLexicalError(t *testing.T) {
 	for _, tc := range []struct {
 		expression string
 		span       contracts.SourceSpan
 	}{
-		{"a]", contracts.SourceSpan{Start: 0, End: 1}},
-		{"  a]", contracts.SourceSpan{Start: 2, End: 3}},
+		{"unknown", contracts.SourceSpan{Start: 0, End: 7}},
+		{"unknown]", contracts.SourceSpan{Start: 0, End: 7}},
+		{"unknown@", contracts.SourceSpan{Start: 0, End: 7}},
+		{"-unknown]", contracts.SourceSpan{Start: 1, End: 8}},
+		{"(unknown]", contracts.SourceSpan{Start: 1, End: 8}},
+		{"  unknown]", contracts.SourceSpan{Start: 2, End: 9}},
 		{"asdasdfasdasfasfasfASFASFASFAFASFASFASFAFASFASFASFASFASFASFASFASFASFdf]asd]gla]hdgasd[gksdgdsgsd DeG",
-			contracts.SourceSpan{Start: 0, End: 1}},
+			contracts.SourceSpan{Start: 0, End: 70}},
 	} {
 		outcome := evaluate(t, tc.expression).Outcome
 		if outcome.Kind != contracts.OutcomeError || outcome.Error == nil || outcome.Error.Code != contracts.ErrorUnknownIdentifier ||
 			outcome.Error.Stage != contracts.StageParse || outcome.Error.Span == nil || *outcome.Error.Span != tc.span {
 			if outcome.Error == nil {
-				t.Errorf("%q: outcome = %+v, want unknown identifier at %v", tc.expression, outcome, tc.span)
+				t.Errorf("%q: outcome = %+v, want unknown identifier spanning %v", tc.expression, outcome, tc.span)
 			} else {
-				t.Errorf("%q: code=%s params=%v span=%v, want unknown identifier at %v", tc.expression,
+				t.Errorf("%q: code=%s params=%v span=%v, want unknown identifier spanning %v", tc.expression,
 					outcome.Error.Code, outcome.Error.Params, outcome.Error.Span, tc.span)
 			}
 		}
+	}
+	beforeEvaluation := evaluate(t, "1/0+unknown]").Outcome.Error
+	if beforeEvaluation == nil || beforeEvaluation.Code != contracts.ErrorUnknownIdentifier || beforeEvaluation.Stage != contracts.StageParse {
+		t.Errorf("parse error must precede evaluation failure: %+v", beforeEvaluation)
 	}
 	known := evaluate(t, "sin]").Outcome.Error
 	if known == nil || known.Code != contracts.ErrorSyntax || known.Span == nil ||
 		*known.Span != (contracts.SourceSpan{Start: 3, End: 4}) {
 		t.Errorf("known function followed by ] = %+v, want syntax error at ]", known)
+	}
+}
+
+func TestFirstParseErrorPrecedesLaterLexicalAndEvaluationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		expression string
+		code       contracts.MathErrorCode
+		span       contracts.SourceSpan
+	}{
+		{"2+)@", contracts.ErrorSyntax, contracts.SourceSpan{Start: 2, End: 2}},
+		{"sin(1,2)@", contracts.ErrorWrongArity, contracts.SourceSpan{Start: 5, End: 6}},
+		{"1/0@", contracts.ErrorSyntax, contracts.SourceSpan{Start: 3, End: 4}},
+	} {
+		ev := evaluate(t, tc.expression)
+		e := ev.Outcome.Error
+		if e == nil || e.Code != tc.code || e.Stage != contracts.StageParse || e.Span == nil || *e.Span != tc.span || ev.Facts != nil {
+			t.Errorf("%q: outcome %+v facts %+v, want parse %s at %v without evaluated facts", tc.expression,
+				ev.Outcome, ev.Facts, tc.code, tc.span)
+		}
 	}
 }
 
