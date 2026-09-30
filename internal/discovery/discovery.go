@@ -28,51 +28,52 @@ type Text struct {
 
 // Definition gives a discovery its stable ID and localized copy.
 type Definition struct {
-	ID string
-	RU Text
-	EN Text
+	ID     string
+	Secret bool
+	RU     Text
+	EN     Text
 }
 
 var catalog = [...]Definition{
 	answerFound: {
-		ID: "answer_found",
-		RU: Text{"Ответ найден", "Получить точный результат 42.", "Ответ есть. Вопрос всё ещё открыт."},
-		EN: Text{"Answer found", "Get an exact result of 42.", "The answer is here. The question isn't."},
+		ID: "answer_found", Secret: true,
+		RU: Text{"Главный вопрос", "Получить точный результат 42.", "Ответ есть. Вопрос всё ещё открыт."},
+		EN: Text{"The Big Question", "Get an exact result of 42.", "The answer is here. The question isn't."},
 	},
 	sixSeven: {
-		ID: "six_seven",
-		RU: Text{"Сикс-севен", "Получить точный результат 67.", "Сикс-севен!"},
-		EN: Text{"Six seven", "Get an exact result of 67.", "Six seven!"},
+		ID: "six_seven", Secret: true,
+		RU: Text{"Мем года", "Получить точный результат 67.", "Сикс-севен!"},
+		EN: Text{"Meme of the Year", "Get an exact result of 67.", "Six seven!"},
 	},
 	niceNumber: {
-		ID: "nice_number",
-		RU: Text{"Красивое число", "Получить точный результат 69.", "Nice."},
-		EN: Text{"Nice number", "Get an exact result of 69.", "Nice."},
+		ID: "nice_number", Secret: true,
+		RU: Text{"Тонкий намёк", "Получить точный результат 69.", "Nice."},
+		EN: Text{"A Subtle Hint", "Get an exact result of 69.", "Nice."},
 	},
 	resultFound: {
-		ID: "result_found",
-		RU: Text{"Результат найден", "Получить точный результат 404.", "Ошибка 404: результат найден."},
-		EN: Text{"Result found", "Get an exact result of 404.", "404: result found."},
+		ID: "result_found", Secret: true,
+		RU: Text{"Потерянный сигнал", "Получить точный результат 404.", "Ошибка 404: результат найден."},
+		EN: Text{"Lost Signal", "Get an exact result of 404.", "404: result found."},
 	},
 	peerReview: {
 		ID: "peer_review",
-		RU: Text{"Рецензия пройдена", "Повторить без ошибок одно выражение в том же угловом режиме.", "Проверили ещё раз. Ответ тот же."},
-		EN: Text{"Peer reviewed", "Repeat an expression without errors in the same angle mode.", "Checked again. Same answer."},
+		RU: Text{"Всё под контролем", "Три раза подряд вычислить одно и то же выражение без ошибок.", "Проверили ещё раз. Ответ тот же."},
+		EN: Text{"Under Control", "Calculate the same expression successfully three times in a row.", "Checked again. Same answer."},
 	},
 	bracketArchitect: {
 		ID: "bracket_architect",
-		RU: Text{"Архитектор скобок", "Вычислить выражение с глубокой вложенностью скобок.", "Скобки держатся. Пока что."},
-		EN: Text{"Bracket architect", "Calculate an expression with deeply nested parentheses.", "The parentheses are holding up. For now."},
+		RU: Text{"Внутренний мир", "Вычислить выражение с глубиной вложенности скобок не менее шести.", "Скобки держатся. Пока что."},
+		EN: Text{"Inner World", "Calculate an expression with at least six levels of nested parentheses.", "The parentheses are holding up. For now."},
 	},
 	scientificMethod: {
 		ID: "scientific_method",
-		RU: Text{"Научный метод", "В одном вычислении применить разные научные функции.", "Здесь уже не обойтись счётом на пальцах."},
-		EN: Text{"Scientific method", "Use different scientific functions in one calculation.", "That's beyond counting on your fingers."},
+		RU: Text{"Исследователь", "В одном успешном вычислении применить не менее трёх разных научных функций.", "Здесь уже не обойтись счётом на пальцах."},
+		EN: Text{"Explorer", "Use at least three different scientific functions in one successful calculation.", "That's beyond counting on your fingers."},
 	},
 	touchGrass: {
 		ID: "touch_grass",
-		RU: Text{"Время сделать паузу", "Провести много вычислений, в том числе с ошибками.", "Может, пора выйти погулять?"},
-		EN: Text{"Time for a break", "Make plenty of calculations, including ones that end in errors.", "Maybe take a walk?"},
+		RU: Text{"Снаружи тоже жизнь", "Провести 25 вычислений; вычисления с математическими ошибками тоже считаются.", "Может, пора выйти погулять?"},
+		EN: Text{"Life Outside", "Make 25 calculations; mathematical errors count too.", "Maybe take a walk?"},
 	},
 }
 
@@ -236,7 +237,7 @@ func (r Rules) matchesPeerReview(input *Input) bool {
 	for i := range input.Previous {
 		previous := &input.Previous[i]
 		if previous.Outcome.Kind != contracts.OutcomeSuccess || previous.Expression != current.Expression ||
-			previous.Context.AngleUnit != current.Context.AngleUnit || previous.RequestID == "" {
+			previous.RequestID == "" {
 			return false
 		}
 		// An accidentally repeated action in a supplied window is not a new

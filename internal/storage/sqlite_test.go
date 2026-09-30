@@ -165,7 +165,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireLegacyRecord(t, db)
-	requireSchemaVersion(t, db, 4)
+	requireSchemaVersion(t, db, 5)
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", "session-1", 100); err != nil {
 		t.Fatalf("core schema not initialized: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	requireLegacyRecord(t, reopened)
-	requireSchemaVersion(t, reopened, 4)
+	requireSchemaVersion(t, reopened, 5)
 	var sessions int
 	if err := reopened.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sessions WHERE id = ?", "session-1").Scan(&sessions); err != nil {
 		t.Fatal(err)
@@ -325,6 +325,218 @@ func requireLegacyRecord(t *testing.T, db *sql.DB) {
 	}
 }
 
+func TestOpenExpressionAngleMigrationPreservesHistoryAndProgress(t *testing.T) {
+	path := privateDatabasePath(t, "expression-angle-upgrade.sqlite")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	for _, migration := range []string{
+		"migrations/001_core.sql", "migrations/002_achievements.sql",
+		"migrations/003_personal_effects.sql", "migrations/004_discovery_progress.sql",
+	} {
+		schema, err := os.ReadFile(migration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := legacy.ExecContext(t.Context(), string(schema)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	when := time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	createdAt := when.Format(time.RFC3339Nano)
+	const degreeOutcome = `{"kind":"success","value":"1"}`
+	const radianOutcome = `{"kind":"success","value":"6.123233995736757e-17"}`
+	const radianFacts = `{"operators":{"/":1},"functions":{"cos":1},"operationCount":2,"depth":1}`
+	if _, err := legacy.ExecContext(t.Context(), `
+		PRAGMA foreign_keys = ON;
+		INSERT INTO sessions (id, expires_at) VALUES ('owner', 4102444800), ('other', 4102444801);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(t.Context(), `
+		INSERT INTO calculations
+			(seq, id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
+		VALUES
+			(7, 'degree-source', 'owner', 'degree-action', 'sin(90)', 'deg', 'binary64-v1', ?, NULL, ?),
+			(19, 'radian-source', 'owner', 'radian-action', 'cos(pi/2)', 'rad', 'binary64-v1', ?, ?, ?),
+			(23, 'removed-source', 'other', 'removed-action', '2', 'deg', 'binary64-v1', '{"kind":"success","value":"2"}', NULL, ?);
+	`, degreeOutcome, createdAt, radianOutcome, radianFacts, createdAt, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(t.Context(), `
+		DELETE FROM calculations WHERE id = 'removed-source';
+		INSERT INTO discovery_progress (session_id, last_sequence, accepted_count) VALUES ('owner', 19, 2);
+		PRAGMA user_version = 4;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(t.Context(), `
+		INSERT INTO achievements (session_id, achievement_id, calculation_id, earned_at)
+			VALUES ('owner', 'scientific_method', 'degree-source', ?)`, createdAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(t.Context(), `
+		INSERT INTO personal_effects (session_id, last_calculation_id, last_scene_at_ns)
+			VALUES ('owner', 'radian-source', ?)`, when.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := storage.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	requireSchemaVersion(t, upgraded, 5)
+	var obsoleteColumns, foreignKeys, expiry, highWatermark int64
+	if err := upgraded.QueryRowContext(t.Context(),
+		"SELECT COUNT(*) FROM pragma_table_info('calculations') WHERE name = 'angle_unit'").Scan(&obsoleteColumns); err != nil || obsoleteColumns != 0 {
+		t.Fatalf("obsolete context column remains: %d, %v", obsoleteColumns, err)
+	}
+	if err := upgraded.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil || foreignKeys != 1 {
+		t.Fatalf("foreign keys disabled after upgrade: %d, %v", foreignKeys, err)
+	}
+	if err := upgraded.QueryRowContext(t.Context(), "SELECT expires_at FROM sessions WHERE id = 'owner'").Scan(&expiry); err != nil || expiry != 4102444800 {
+		t.Fatalf("session expiry changed: %d, %v", expiry, err)
+	}
+	if err := upgraded.QueryRowContext(t.Context(), "SELECT seq FROM sqlite_sequence WHERE name = 'calculations'").Scan(&highWatermark); err != nil || highWatermark != 23 {
+		t.Fatalf("sequence high-water mark changed: %d, %v", highWatermark, err)
+	}
+	// Saved source, formatting, facts and historical semantics must survive
+	// byte-for-byte; the upgrade must never recompute old results.
+	for _, saved := range []struct {
+		id, requestID, expression, outcome, facts string
+		sequence                                  int64
+	}{
+		{"radian-source", "radian-action", "cos(pi/2)", radianOutcome, radianFacts, 19},
+		{"degree-source", "degree-action", "sin(90)", degreeOutcome, "", 7},
+	} {
+		var requestID, expression, version, outcome, timestamp string
+		var facts sql.NullString
+		var sequence int64
+		if err := upgraded.QueryRowContext(t.Context(), `
+			SELECT seq, request_id, expression, semantics_version, outcome_json, facts_json, created_at
+			FROM calculations WHERE session_id = 'owner' AND id = ?`, saved.id).
+			Scan(&sequence, &requestID, &expression, &version, &outcome, &facts, &timestamp); err != nil {
+			t.Fatal(err)
+		}
+		if sequence != saved.sequence || requestID != saved.requestID || expression != saved.expression ||
+			version != "binary64-v1" || outcome != saved.outcome || timestamp != createdAt ||
+			facts.Valid != (saved.facts != "") || facts.String != saved.facts {
+			t.Fatalf("historical record changed: seq=%d request=%q source=%q version=%q outcome=%q facts=%+v timestamp=%q",
+				sequence, requestID, expression, version, outcome, facts, timestamp)
+		}
+	}
+	cursor := int64(24)
+	for _, want := range []struct {
+		id       string
+		sequence int64
+	}{{"radian-source", 19}, {"degree-source", 7}} {
+		var sequence int64
+		record, err := storage.ReadCalculationRecord(upgraded.QueryRowContext(t.Context(), `
+			SELECT `+storage.SequencedCalculationRecordColumns+` FROM calculations
+			WHERE session_id = 'owner' AND seq < ? ORDER BY seq DESC LIMIT 1`, cursor), &sequence, storage.StrictFacts)
+		if err != nil || record.ID != want.id || sequence != want.sequence ||
+			record.Context.SemanticsVersion != "binary64-v1" || !record.CreatedAt.Equal(when) {
+			t.Fatalf("upgraded history pagination changed: %+v, seq=%d, %v", record, sequence, err)
+		}
+		cursor = sequence
+	}
+	awards, err := storage.ListAchievements(t.Context(), upgraded, "owner")
+	if err != nil || len(awards) != 1 || awards[0].ID != "scientific_method" || !awards[0].EarnedAt.Equal(when) {
+		t.Fatalf("saved awards changed: %+v, %v", awards, err)
+	}
+	var awardSource, effectSource string
+	var sceneTime int64
+	if err := upgraded.QueryRowContext(t.Context(), `
+		SELECT calculation_id FROM achievements WHERE session_id = 'owner' AND achievement_id = 'scientific_method'`).
+		Scan(&awardSource); err != nil || awardSource != "degree-source" {
+		t.Fatalf("saved award source changed: %q, %v", awardSource, err)
+	}
+	if err := upgraded.QueryRowContext(t.Context(), `
+		SELECT last_calculation_id, last_scene_at_ns FROM personal_effects WHERE session_id = 'owner'`).
+		Scan(&effectSource, &sceneTime); err != nil || effectSource != "radian-source" || sceneTime != when.UnixNano() {
+		t.Fatalf("saved effect cooldown changed: %q, %d, %v", effectSource, sceneTime, err)
+	}
+	progress, err := storage.ReadDiscoveryProgress(t.Context(), upgraded, "owner")
+	if err != nil || progress != (storage.DiscoveryProgress{LastSequence: 19, AcceptedCount: 2}) {
+		t.Fatalf("discovery checkpoint changed: %+v, %v", progress, err)
+	}
+	violations, err := upgraded.QueryContext(t.Context(), "PRAGMA foreign_key_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if violations.Next() {
+		t.Fatal("upgrade left dangling source references")
+	}
+	if err := violations.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := violations.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"DELETE FROM calculations WHERE id = 'degree-source'",
+		"DELETE FROM calculations WHERE id = 'radian-source'",
+		"UPDATE achievements SET session_id = 'other' WHERE session_id = 'owner'",
+	} {
+		_, err := upgraded.ExecContext(t.Context(), statement)
+		var sqliteErr *sqlite.Error
+		if !errors.As(err, &sqliteErr) || sqliteErr.Code()&0xff != sqlite3.SQLITE_CONSTRAINT {
+			t.Fatalf("saved source constraint lost: %q returned %v", statement, err)
+		}
+	}
+	var retainedSources, retainedAward, retainedEffect int
+	if err := upgraded.QueryRowContext(t.Context(), `
+		SELECT
+			(SELECT COUNT(*) FROM calculations WHERE session_id = 'owner' AND id IN ('degree-source', 'radian-source')),
+			(SELECT COUNT(*) FROM achievements WHERE session_id = 'owner' AND achievement_id = 'scientific_method' AND calculation_id = 'degree-source'),
+			(SELECT COUNT(*) FROM personal_effects WHERE session_id = 'owner' AND last_calculation_id = 'radian-source')
+	`).Scan(&retainedSources, &retainedAward, &retainedEffect); err != nil ||
+		retainedSources != 2 || retainedAward != 1 || retainedEffect != 1 {
+		t.Fatalf("rejected source changes modified records or ownership: sources=%d award=%d effect=%d, %v",
+			retainedSources, retainedAward, retainedEffect, err)
+	}
+	if _, err := upgraded.ExecContext(t.Context(), `
+		INSERT INTO calculations (id, session_id, request_id, expression, semantics_version, outcome_json, created_at)
+		VALUES ('new-source', 'owner', 'new-action', 'sin(90°)', 'binary64-v2', ?, ?)`, degreeOutcome, createdAt); err != nil {
+		t.Fatalf("angle-free calculation could not be saved after upgrade: %v", err)
+	}
+	var newSequence int64
+	if err := upgraded.QueryRowContext(t.Context(), "SELECT seq FROM calculations WHERE id = 'new-source'").
+		Scan(&newSequence); err != nil || newSequence != 24 {
+		t.Fatalf("new action reused historical sequence: %d, %v", newSequence, err)
+	}
+	newAwards, err := storage.CommitDiscoveryProgress(t.Context(), upgraded, "owner", progress,
+		storage.DiscoveryProgress{LastSequence: 24, AcceptedCount: 3},
+		[]storage.DiscoveryGrant{{CalculationID: "new-source", IDs: []string{"scientific_method"}}})
+	if err != nil || len(newAwards) != 0 {
+		t.Fatalf("upgraded checkpoint re-awarded existing discovery: %+v, %v", newAwards, err)
+	}
+	if err := upgraded.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := storage.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	progress, err = storage.ReadDiscoveryProgress(t.Context(), reopened, "owner")
+	if err != nil || progress != (storage.DiscoveryProgress{LastSequence: 24, AcceptedCount: 3}) {
+		t.Fatalf("upgraded checkpoint did not survive restart: %+v, %v", progress, err)
+	}
+	awards, err = storage.ListAchievements(t.Context(), reopened, "owner")
+	if err != nil || len(awards) != 1 || !awards[0].EarnedAt.Equal(when) {
+		t.Fatalf("upgraded awards did not survive restart: %+v, %v", awards, err)
+	}
+}
+
 func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
 	path := privateDatabasePath(t, "discovery-upgrade.sqlite")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -347,7 +559,15 @@ func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
 		}
 	}
 	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	saveAwardAction(t, legacy, "owner", "legacy-source", when)
+	// Seed the historical schema directly, independently of current helpers.
+	if _, err := legacy.ExecContext(t.Context(), `
+		INSERT INTO sessions (id, expires_at) VALUES ('owner', 4102444800);
+		INSERT INTO calculations
+			(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
+		VALUES ('legacy-source', 'owner', 'legacy-source', '((((((60+7))))))', 'deg', 'binary64-v1',
+			'{"kind":"success","value":"67"}', NULL, ?)`, when.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
 	// This fixture predates discovery_progress; seed its original award directly.
 	if _, err := legacy.ExecContext(t.Context(), `
 		INSERT INTO achievements (session_id, achievement_id, calculation_id, earned_at)
@@ -365,7 +585,7 @@ func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	requireSchemaVersion(t, upgraded, 4)
+	requireSchemaVersion(t, upgraded, 5)
 	var source, expression string
 	if err := upgraded.QueryRowContext(t.Context(), `
 		SELECT a.calculation_id, c.expression FROM achievements a

@@ -10,7 +10,7 @@ import (
 
 // CalculationRecordColumns is the persisted record projection, shared by replay,
 // history and discovery queries. Sequence is pagination/progress metadata only.
-const CalculationRecordColumns = "id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at"
+const CalculationRecordColumns = "id, request_id, expression, semantics_version, outcome_json, facts_json, created_at"
 const SequencedCalculationRecordColumns = "seq, " + CalculationRecordColumns
 
 // RecordScanner is satisfied by both a single SQL row and an open rows cursor.
@@ -43,11 +43,11 @@ func ReadCalculationRecord(row RecordScanner, sequence *int64, policy FactsPolic
 	var err error
 	if sequence == nil {
 		err = row.Scan(&raw.record.ID, &raw.record.RequestID, &raw.record.Expression,
-			&raw.record.Context.AngleUnit, &raw.record.Context.SemanticsVersion,
+			&raw.record.Context.SemanticsVersion,
 			&raw.outcomeJSON, &raw.factsJSON, &raw.createdAt)
 	} else {
 		err = row.Scan(sequence, &raw.record.ID, &raw.record.RequestID, &raw.record.Expression,
-			&raw.record.Context.AngleUnit, &raw.record.Context.SemanticsVersion,
+			&raw.record.Context.SemanticsVersion,
 			&raw.outcomeJSON, &raw.factsJSON, &raw.createdAt)
 	}
 	if err != nil {

@@ -20,8 +20,8 @@ func saveAwardAction(t *testing.T, db *sql.DB, owner, id string, createdAt time.
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO calculations
-		(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, '((((((60+7))))))', 'deg', 'binary64-v1',
+		(id, session_id, request_id, expression, semantics_version, outcome_json, facts_json, created_at)
+		VALUES (?, ?, ?, '((((((60+7))))))', 'binary64-v1',
 		'{"kind":"success","value":"67"}', NULL, ?)`,
 		id, owner, id, createdAt.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
@@ -229,7 +229,17 @@ func TestAchievementMigrationUpgradesCoreHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	earnedAt := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	saveAwardAction(t, old, "legacy-owner", "legacy-action", earnedAt)
+	// Historical fixtures retain their original required columns independently
+	// of helpers that insert into the current schema.
+	if _, err := old.ExecContext(t.Context(), `
+		INSERT INTO sessions (id, expires_at) VALUES ('legacy-owner', 4102444800);
+		INSERT INTO calculations
+			(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
+		VALUES ('legacy-action', 'legacy-owner', 'legacy-action', '((((((60+7))))))',
+			'deg', 'binary64-v1', '{"kind":"success","value":"67"}', NULL, ?)`,
+		earnedAt.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
 	if err := old.Close(); err != nil {
 		t.Fatal(err)
 	}

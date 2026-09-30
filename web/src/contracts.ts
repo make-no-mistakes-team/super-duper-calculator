@@ -1,11 +1,7 @@
-export type AngleUnit = 'deg' | 'rad';
-
 export type Capabilities = {
   semanticsVersion: string;
   operators: string[];
   functions: Record<string, number[]>;
-  angleUnits: AngleUnit[];
-  defaultAngleUnit: AngleUnit;
   limits: {
     expressionLength: number;
     tokens: number;
@@ -44,7 +40,6 @@ export type Outcome =
   | { kind: 'error'; error: MathError };
 
 export type CalculationContext = {
-  angleUnit: AngleUnit;
   semanticsVersion: string;
 };
 
@@ -63,7 +58,6 @@ export type RoomContext = {
 export type CalculationRequest = {
   requestId: string;
   expression: string;
-  angleUnit: AngleUnit;
   room?: RoomContext;
 };
 
@@ -119,6 +113,7 @@ export type DiscoveryText = {
 
 export type DiscoveryDefinition = {
   id: string;
+  secret: boolean;
   ru: DiscoveryText;
   en: DiscoveryText;
 };

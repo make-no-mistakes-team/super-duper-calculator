@@ -5,6 +5,7 @@ export type Preferences = {
   theme: 'violet' | 'amber';
   humor: boolean;
   largeEffects: boolean;
+  soundEnabled: boolean;
 };
 
 export type PreferencesPanelProps = {
@@ -15,7 +16,7 @@ export type PreferencesPanelProps = {
 };
 
 const storageKey = 'calculator.preferences.v1';
-const defaults: Preferences = { theme: 'violet', humor: true, largeEffects: true };
+const defaults: Preferences = { theme: 'violet', humor: true, largeEffects: true, soundEnabled: true };
 
 function readPreferences(): Preferences {
   if (typeof window === 'undefined') return defaults;
@@ -28,6 +29,7 @@ function readPreferences(): Preferences {
       theme: values.theme === 'amber' || values.theme === 'violet' ? values.theme : defaults.theme,
       humor: typeof values.humor === 'boolean' ? values.humor : defaults.humor,
       largeEffects: typeof values.largeEffects === 'boolean' ? values.largeEffects : defaults.largeEffects,
+      soundEnabled: typeof values.soundEnabled === 'boolean' ? values.soundEnabled : defaults.soundEnabled,
     };
   } catch {
     // Browsing without storage must not disable settings for this visit.
@@ -95,7 +97,7 @@ export function PreferencesPanel({ preferences, onChange, achievementsAvailable,
             <label className="preferences-choice">
               <input type="checkbox" checked={preferences.largeEffects}
                 onChange={(event) => onChange({ largeEffects: event.currentTarget.checked })} />
-              <span className="preferences-label">Крупные эффекты<small>Шуточные сцены калькулятора</small></span>
+              <span className="preferences-label">«Спецэффекты»<small>Праздник достижений и шуточные сцены. Звук управляется отдельно.</small></span>
             </label>
           </div>
         </fieldset>

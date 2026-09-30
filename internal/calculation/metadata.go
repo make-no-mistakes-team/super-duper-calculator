@@ -8,7 +8,7 @@ import (
 )
 
 // SemanticsVersion identifies the engine's persisted mathematical semantics.
-const SemanticsVersion = "binary64-v1"
+const SemanticsVersion = "binary64-v2"
 
 // mathematicalCapabilities is derived once from the parser's executable table.
 // It stays private; callers receive their own mutable collections.
@@ -17,8 +17,6 @@ var mathematicalCapabilities = func() contracts.Capabilities {
 		SemanticsVersion: SemanticsVersion,
 		Operators:        make([]string, 0),
 		Functions:        make(map[string][]int),
-		AngleUnits:       []contracts.AngleUnit{contracts.Degrees, contracts.Radians},
-		DefaultAngleUnit: contracts.Degrees,
 		Limits: contracts.CapabilityLimits{
 			ExpressionLength: maxLength, Tokens: maxTokens, Nesting: maxNesting,
 		},
@@ -58,7 +56,6 @@ var mathematicalCapabilities = func() contracts.Capabilities {
 func MathematicalCapabilities() contracts.Capabilities {
 	available := mathematicalCapabilities
 	available.Operators = slices.Clone(available.Operators)
-	available.AngleUnits = slices.Clone(available.AngleUnits)
 	available.Functions = make(map[string][]int, len(mathematicalCapabilities.Functions))
 	for name, arities := range mathematicalCapabilities.Functions {
 		available.Functions[name] = slices.Clone(arities)

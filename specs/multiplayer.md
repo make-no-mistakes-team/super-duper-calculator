@@ -64,7 +64,7 @@ Publish successful, grammar-validated calculations with:
 
 - display alias;
 - expression and result;
-- angle context where needed to interpret the expression;
+- mathematical semantics version; degree notation stays in the expression;
 - server order/time;
 - public achievement or reaction information.
 
@@ -150,7 +150,7 @@ With at least two independent browser identities:
 
 - join and exchange real calculation events;
 - confirm private history and private-mode calculations remain private;
-- verify angle context and event order;
+- verify unchanged expression notation, mathematical context, and event order;
 - disconnect and reconnect without duplicates;
 - continue calculating when live updates fail.
 

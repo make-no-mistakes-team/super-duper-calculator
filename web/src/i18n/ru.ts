@@ -11,7 +11,6 @@ export const ru: Messages = {
   },
   calculation: {
     unsupported: 'Эта операция больше недоступна для новых вычислений',
-    angleUnitLabel: { deg: 'градусы', rad: 'радианы' },
     outcomeLabel: { success: 'Результат', error: 'Ошибка' },
     mathErrors: {
       SYNTAX_ERROR: 'Синтаксическая ошибка',
@@ -71,8 +70,8 @@ export const ru: Messages = {
     copyFailed: 'Не удалось скопировать. Выделите значение вручную:',
     copyAnnouncement: 'Точное значение скопировано.',
     copyFailedAnnouncement: 'Не удалось скопировать. Выделите точное значение вручную.',
-    correct: 'Исправить',
-    restoreExpression: 'Вернуть выражение',
+    goToError: 'Перейти к ошибке',
+    restoreExpression: 'Восстановить выражение',
     extensions: { factorial: 'факториал', percentage: 'проценты', remainder: 'остаток от деления' },
   },
 };

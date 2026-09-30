@@ -61,7 +61,7 @@
 }
 
 .discovery-notice__collection {
-  font: 400 1.125rem/1.25 var(--controls);
+  font: 400 1.125rem/1.4 var(--achievements);
   white-space: nowrap;
 }
 
@@ -75,92 +75,6 @@
   display: grid;
   place-items: center;
   width: 44px;
-}
-
-.achievement-collection {
-  min-width: 0;
-  border-top: 1px solid var(--line);
-}
-
-.achievement-collection__summary {
-  min-height: 48px;
-  padding: 12px 4px;
-  color: var(--muted);
-  font: 400 1.25rem/1.25 var(--controls);
-}
-
-.achievement-collection__summary:hover {
-  color: var(--accent);
-}
-
-.achievement-collection__count {
-  margin-left: 8px;
-  font: 400 .75rem/1.5 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.achievement-collection__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.achievement-collection__item {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 16px 4px;
-  border-top: 1px solid var(--line);
-}
-
-.achievement-collection__name {
-  color: inherit;
-  font-size: .9375rem;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.achievement-collection__description {
-  margin: 0;
-  color: var(--muted);
-  font-size: .875rem;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.achievement-collection__state {
-  color: var(--muted);
-  font: 400 .8125rem/1.5 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.achievement-collection__state--earned {
-  color: var(--accent);
-}
-
-.achievement-collection__unavailable {
-  padding: 4px 4px 20px;
-}
-
-.achievement-collection__unavailable p {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: .9375rem;
-  line-height: 1.5;
-}
-
-.achievement-collection__unavailable button {
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: inherit;
-  font: 400 1.125rem/1.25 var(--controls);
-}
-
-.achievement-collection__unavailable button:hover {
-  border-color: var(--frame);
-  background: var(--surface-hover);
 }
 
 @keyframes discovery-notice-enter {

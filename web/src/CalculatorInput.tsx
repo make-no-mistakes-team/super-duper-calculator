@@ -1,30 +1,29 @@
 import { useRef, type ReactNode } from 'react';
-import type { AngleUnit, Capabilities } from './contracts';
+import type { Capabilities } from './contracts';
 import type { CalculatorTool, ToolController } from './features/tools/useToolController';
 
 type CalculatorInputProps = {
   expression: string;
-  angleUnit: AngleUnit;
   capabilities: Capabilities | null;
   activeTool: CalculatorTool | null;
   toolController: ToolController;
   onExpressionChange: (expression: string) => void;
-  onAngleUnitChange: (angleUnit: AngleUnit) => void;
   onSubmit: () => void;
   history: ReactNode;
+  statistics: ReactNode;
   settings: ReactNode;
   children: ReactNode;
 };
 
-const arithmeticKeys = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '(', ')', 'pi', 'e', '^', '+'];
+const arithmeticKeys = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '(', ')', 'pi', 'e', '^', '+', '°'];
 const operatorKeys: Record<string, true> = { '/': true, '*': true, '-': true, '+': true, '^': true };
 const labels: Record<string, string> = { '/': '÷', '*': '×', pi: 'π' };
 const functions = [
   { name: 'sqrt', label: 'Корень', example: 'sqrt(81)' },
   { name: 'abs', label: 'Модуль', example: 'abs(-5)' },
-  { name: 'sin', label: 'Синус', example: 'sin(30)' },
-  { name: 'cos', label: 'Косинус', example: 'cos(60)' },
-  { name: 'tan', label: 'Тангенс', example: 'tan(45)' },
+  { name: 'sin', label: 'Синус', example: 'sin(30°)' },
+  { name: 'cos', label: 'Косинус', example: 'cos(60°)' },
+  { name: 'tan', label: 'Тангенс', example: 'tan(45°)' },
   { name: 'atan', label: 'Арктангенс', example: 'atan(1)' },
   { name: 'asin', label: 'Арксинус', example: 'asin(0.5)' },
   { name: 'acos', label: 'Арккосинус', example: 'acos(0.5)' },
@@ -32,12 +31,12 @@ const functions = [
   { name: 'log', label: 'Логарифм log', example: 'log(8, 2)' },
   { name: 'exp', label: 'Экспонента', example: 'exp(2)' },
 ];
-const toolLabels: Record<CalculatorTool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История', settings: 'Настройки' };
-const tools: CalculatorTool[] = ['functions', 'keypad', 'history'];
+const toolLabels: Record<CalculatorTool, string> = { functions: 'Функции', keypad: 'Клавиатура', history: 'История', statistics: 'Статистика', settings: 'Настройки' };
+const tools: CalculatorTool[] = ['functions', 'keypad', 'history', 'statistics'];
 
 export function CalculatorInput({
-  expression, angleUnit, capabilities, activeTool, toolController,
-  onExpressionChange, onAngleUnitChange, onSubmit, history, settings, children,
+  expression, capabilities, activeTool, toolController,
+  onExpressionChange, onSubmit, history, statistics, settings, children,
 }: CalculatorInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
@@ -86,7 +85,7 @@ export function CalculatorInput({
   }
 
   function renderKey(key: string) {
-    return <button key={key} type="button" className={`calculator-key${operatorKeys[key] ? ' calculator-key--operator' : ''}`}
+    return <button key={key} type="button" className={`calculator-key${operatorKeys[key] ? ' calculator-key--operator' : ''}${key === '°' ? ' calculator-key--degree' : ''}`}
       aria-label={`Вставить ${labels[key] ?? key}`} onClick={() => insert(key)}>{labels[key] ?? key}</button>;
   }
 
@@ -99,11 +98,6 @@ export function CalculatorInput({
               <path d="m4 6 6 6-6 6M13 18h7" stroke="currentColor" strokeWidth="2" />
             </svg>
             <div className="editor-options">
-              <label className="visually-hidden" htmlFor="angle-unit">Единицы углов</label>
-              <select id="angle-unit" value={angleUnit} title="Единицы углов: DEG — градусы, RAD — радианы"
-                onChange={(event) => onAngleUnitChange(event.target.value as AngleUnit)}>
-                <option value="deg">DEG</option><option value="rad">RAD</option>
-              </select>
               <button className="text-button" type="button" disabled={expression === ''} onClick={() => {
                 onExpressionChange('');
                 toolController.focusEditor({ closeTool: false, preventScroll: true, selection: { start: 0, end: 0 } });
@@ -139,6 +133,7 @@ export function CalculatorInput({
               {tool === 'functions' && <path d="M17 5h-4l-3 14H6M7 10h9" stroke="currentColor" strokeWidth="2" />}
               {tool === 'keypad' && <path d="M4 4h16v16H4zM8 8h2m4 0h2M8 12h2m4 0h2M8 16h2m4 0h2" stroke="currentColor" strokeWidth="2" />}
               {tool === 'history' && <path d="M4 10a8 8 0 1 1 1 7M4 4v6h6m2-3v5l3 2" stroke="currentColor" strokeWidth="2" />}
+              {tool === 'statistics' && <path d="M4 20h16M6 16V9m6 7V4m6 12v-5" stroke="currentColor" strokeWidth="2" />}
             </svg>
             {toolLabels[tool]}
           </button>)}
@@ -154,6 +149,7 @@ export function CalculatorInput({
         </div>
         <div className="tool-bay-body" ref={toolBodyRef} key={activeTool}>
           {activeTool === 'history' && history}
+          {activeTool === 'statistics' && statistics}
           {activeTool === 'settings' && settings}
           {activeTool === 'keypad' && <>
             <div className="calculator-keys" aria-label="Кнопки калькулятора">{arithmeticKeys.map(renderKey)}</div>
@@ -171,10 +167,10 @@ export function CalculatorInput({
               {capabilities?.features.remainder && <button type="button" className="function-key" title="Остаток: mod(7, 3)"
                 onClick={() => insertFunction('mod')}><span>mod</span><span>Остаток</span></button>}
             </div>
-            <div className="syntax-keys" aria-label="Константы и аргументы">
-              {['pi', 'e', '^', ','].map((key) => <button type="button" key={key} onClick={() => insert(key)}
-                aria-label={key === ',' ? 'Запятая между аргументами' : `Вставить ${labels[key] ?? key}`}>
-                {key === ',' ? <><span>,</span> аргумент</> : labels[key] ?? key}
+            <div className="syntax-keys" role="group" aria-label="Константы и символы">
+              {['pi', 'e', '^', '°', ','].map((key) => <button type="button" key={key} onClick={() => insert(key)}
+                aria-label={key === ',' ? 'Запятая' : `Вставить ${labels[key] ?? key}`}>
+                {labels[key] ?? key}
               </button>)}
               {capabilities?.features.factorial && <button type="button" onClick={() => insert('!')} aria-label="Вставить факториал">!</button>}
               {capabilities?.features.percentage && <button type="button" onClick={() => insert('%')} aria-label="Вставить проценты">%</button>}
@@ -190,8 +186,9 @@ export function CalculatorInput({
             }}>
               <summary>Синтаксис и ограничения</summary>
               <p>Выделите часть выражения, чтобы заключить её в функцию.</p>
-              <dl><dt>log(8, 2)</dt><dd>Логарифм 8 по основанию 2. Запятая разделяет аргументы.</dd>
-                <dt>sin(30)</dt><dd>Угловые функции используют выбранный режим DEG или RAD.</dd></dl>
+              <dl><dt>log(8, 2)</dt><dd>Логарифм 8 по основанию 2.</dd>
+                <dt>sin(90°) = sin(pi/2)</dt><dd>Тригонометрические функции принимают радианы. Знак ° переводит число или группу в радианы: sin((30+60)°).</dd>
+                <dt>asin(1) * 180 / pi</dt><dd>Обратные функции возвращают радианы. Умножение на 180/pi переводит ответ в градусы.</dd></dl>
               <p>До {expressionLimit} символов{capabilities && <>, {capabilities.limits.tokens} токенов, {capabilities.limits.nesting} уровней вложенности</>}.</p>
             </details>
           </>}

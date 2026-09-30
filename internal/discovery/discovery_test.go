@@ -31,7 +31,6 @@ func success(id, expression, value string) contracts.CalculationRecord {
 	return contracts.CalculationRecord{
 		RequestID:  id,
 		Expression: expression,
-		Context:    contracts.CalculationContext{AngleUnit: contracts.Degrees},
 		Outcome:    contracts.Outcome{Kind: "success", Value: value},
 	}
 }
@@ -46,7 +45,6 @@ func engineRecord(t *testing.T, expression string) contracts.CalculationRecord {
 	t.Helper()
 	evaluation, err := calculation.New().Evaluate(t.Context(), calculation.Input{
 		Expression: expression,
-		AngleUnit:  contracts.Degrees,
 	})
 	if err != nil {
 		t.Fatalf("Evaluate(%q): %v", expression, err)
@@ -54,7 +52,6 @@ func engineRecord(t *testing.T, expression string) contracts.CalculationRecord {
 	return contracts.CalculationRecord{
 		RequestID:  "action",
 		Expression: expression,
-		Context:    contracts.CalculationContext{AngleUnit: contracts.Degrees},
 		Outcome:    evaluation.Outcome,
 		Facts:      evaluation.Facts,
 	}
@@ -98,8 +95,6 @@ func TestPeerReviewCountsDistinctConsecutiveAcceptedActions(t *testing.T) {
 	first := success("first", "2+2", "4")
 	second := success("second", "2+2", "4")
 	changedSource := success("source", "2 + 2", "4")
-	changedAngle := success("angle", "2+2", "4")
-	changedAngle.Context.AngleUnit = contracts.Radians
 	for _, test := range []struct {
 		name     string
 		previous []contracts.CalculationRecord
@@ -113,7 +108,6 @@ func TestPeerReviewCountsDistinctConsecutiveAcceptedActions(t *testing.T) {
 		{"retry of current action", []contracts.CalculationRecord{current, second}, false},
 		{"retry beyond nominal window", []contracts.CalculationRecord{first, second, current}, false},
 		{"changed source stops streak", []contracts.CalculationRecord{first, changedSource, second}, false},
-		{"changed angle stops streak", []contracts.CalculationRecord{first, changedAngle, second}, false},
 		{"accepted error stops streak", []contracts.CalculationRecord{first, failure("error", "2+2"), second}, false},
 		{"unidentified action cannot form a streak", []contracts.CalculationRecord{success("", "2+2", "4"), second}, false},
 	} {

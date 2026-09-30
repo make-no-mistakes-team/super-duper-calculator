@@ -3,13 +3,6 @@ package contracts
 
 import "time"
 
-type AngleUnit string
-
-const (
-	Degrees AngleUnit = "deg"
-	Radians AngleUnit = "rad"
-)
-
 // OutcomeKind distinguishes a result from a stored mathematical error.
 type OutcomeKind string
 
@@ -66,8 +59,6 @@ type Capabilities struct {
 	SemanticsVersion string             `json:"semanticsVersion"`
 	Operators        []string           `json:"operators"`
 	Functions        map[string][]int   `json:"functions"`
-	AngleUnits       []AngleUnit        `json:"angleUnits"`
-	DefaultAngleUnit AngleUnit          `json:"defaultAngleUnit"`
 	Limits           CapabilityLimits   `json:"limits"`
 	Features         CapabilityFeatures `json:"features"`
 }
@@ -92,8 +83,7 @@ type Outcome struct {
 }
 
 type CalculationContext struct {
-	AngleUnit        AngleUnit `json:"angleUnit"`
-	SemanticsVersion string    `json:"semanticsVersion"`
+	SemanticsVersion string `json:"semanticsVersion"`
 }
 
 type CalculationFacts struct {
@@ -111,7 +101,6 @@ type RoomContext struct {
 type CalculationRequest struct {
 	RequestID  string       `json:"requestId"`
 	Expression string       `json:"expression"`
-	AngleUnit  AngleUnit    `json:"angleUnit"`
 	Room       *RoomContext `json:"room,omitempty"`
 }
 
@@ -170,9 +159,10 @@ type DiscoveryText struct {
 }
 
 type DiscoveryDefinition struct {
-	ID string        `json:"id"`
-	RU DiscoveryText `json:"ru"`
-	EN DiscoveryText `json:"en"`
+	ID     string        `json:"id"`
+	Secret bool          `json:"secret"`
+	RU     DiscoveryText `json:"ru"`
+	EN     DiscoveryText `json:"en"`
 }
 
 type FunEvent struct {

@@ -93,7 +93,7 @@ func TestAPIRateLimitRetryAndRejectedState(t *testing.T) {
 		t.Fatalf("refilled session status = %d; cookies = %v", session.Code, session.Result().Cookies())
 	}
 	sessionCookie = session.Result().Cookies()[0]
-	calculation := `{"requestId":"rate-check","expression":"1+1","angleUnit":"deg"}`
+	calculation := `{"requestId":"rate-check","expression":"1+1"}`
 	rejected = request(http.MethodPost, "/api/calculations", calculation)
 	assertGuardError(t, rejected, http.StatusTooManyRequests, "RATE_LIMITED")
 	if err := db.QueryRow("SELECT COUNT(*) FROM calculations").Scan(&calculations); err != nil {
@@ -106,7 +106,7 @@ func TestAPIRateLimitRetryAndRejectedState(t *testing.T) {
 	if response := request(http.MethodPost, "/api/calculations", calculation); response.Code != http.StatusOK {
 		t.Fatalf("refilled calculation status = %d; body = %q", response.Code, response.Body.String())
 	}
-	rejected = request(http.MethodPost, "/api/calculations", `{"requestId":"another","expression":"3","angleUnit":"deg"}`)
+	rejected = request(http.MethodPost, "/api/calculations", `{"requestId":"another","expression":"3"}`)
 	assertGuardError(t, rejected, http.StatusTooManyRequests, "RATE_LIMITED")
 	if err := db.QueryRow("SELECT COUNT(*) FROM calculations").Scan(&calculations); err != nil {
 		t.Fatal(err)

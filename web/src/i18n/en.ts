@@ -11,7 +11,6 @@ export const en: Messages = {
   },
   calculation: {
     unsupported: 'This operation is no longer available for new calculations',
-    angleUnitLabel: { deg: 'degrees', rad: 'radians' },
     outcomeLabel: { success: 'Result', error: 'Error' },
     mathErrors: {
       SYNTAX_ERROR: 'Syntax error',
@@ -71,7 +70,7 @@ export const en: Messages = {
     copyFailed: 'Could not copy. Select the value manually:',
     copyAnnouncement: 'Exact value copied.',
     copyFailedAnnouncement: 'Could not copy. Select the exact value manually.',
-    correct: 'Correct',
+    goToError: 'Go to error',
     restoreExpression: 'Restore expression',
     extensions: { factorial: 'factorial', percentage: 'percentages', remainder: 'remainder' },
   },

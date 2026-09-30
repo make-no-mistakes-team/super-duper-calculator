@@ -39,7 +39,7 @@ func newDiscoveryService(db *sql.DB, enabled bool) *discoveryService {
 	catalog := make([]contracts.DiscoveryDefinition, len(authored))
 	for i, definition := range authored {
 		catalog[i] = contracts.DiscoveryDefinition{
-			ID: definition.ID,
+			ID: definition.ID, Secret: definition.Secret,
 			RU: contracts.DiscoveryText{
 				Name: definition.RU.Name, Description: definition.RU.Description, Comment: definition.RU.Comment,
 			},

@@ -60,8 +60,7 @@ export function History({
                 ? calculation.outcomeLabel.success
                 : calculation.outcomeLabel.error;
             const timeText = dateFormatter.format(new Date(item.createdAt));
-            const angleText = calculation.angleUnitLabel[item.context.angleUnit];
-            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${angleText}. ${timeText}${unsupported ? `. ${calculation.unsupported}` : ''}`;
+            const accessibleLabel = `${item.expression}. ${outcomeLabel}: ${outcomeText}. ${timeText}${unsupported ? `. ${calculation.unsupported}` : ''}`;
 
             return (
               <li key={item.id} className="history-item">
@@ -82,9 +81,6 @@ export function History({
                     >
                       {item.outcome.kind === 'success' ? '= ' : ''}
                       {outcomeText}
-                    </span>
-                    <span className="history-angle" aria-hidden="true">
-                      {item.context.angleUnit}
                     </span>
                     <time dateTime={item.createdAt} className="history-time">
                       {timeText}

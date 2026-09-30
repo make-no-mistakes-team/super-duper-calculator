@@ -26,14 +26,14 @@ func saveDiscoveryAction(t *testing.T, db *sql.DB, owner, id, expression string,
 		t.Fatal(err)
 	}
 	evaluation, err := calculation.New().Evaluate(t.Context(), calculation.Input{
-		Expression: expression, AngleUnit: contracts.Degrees,
+		Expression: expression,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	record := contracts.CalculationRecord{
 		ID: id, RequestID: id, Expression: expression,
-		Context: contracts.CalculationContext{AngleUnit: contracts.Degrees, SemanticsVersion: calculation.SemanticsVersion},
+		Context: contracts.CalculationContext{SemanticsVersion: calculation.SemanticsVersion},
 		Outcome: evaluation.Outcome, Facts: evaluation.Facts, CreatedAt: when.UTC(),
 	}
 	outcomeJSON, err := json.Marshal(record.Outcome)
@@ -46,10 +46,10 @@ func saveDiscoveryAction(t *testing.T, db *sql.DB, owner, id, expression string,
 	}
 	if _, err := db.ExecContext(t.Context(), `
 		INSERT INTO calculations
-			(id, session_id, request_id, expression, angle_unit, semantics_version,
+			(id, session_id, request_id, expression, semantics_version,
 				outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, owner, id, expression, record.Context.AngleUnit, record.Context.SemanticsVersion,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, owner, id, expression, record.Context.SemanticsVersion,
 		string(outcomeJSON), string(factsJSON), when.UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestDiscoveryHandlerCommitsOnceAndNeverAnnouncesReplay(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	enabled := newHandler(db, nil, true, true)
 	owner := browserSession(t, enabled)
-	body := `{"requestId":"one-action","expression":"60+7","angleUnit":"deg"}`
+	body := `{"requestId":"one-action","expression":"60+7"}`
 	first := decodeBody[contracts.CalculationResponse](t,
 		apiRequest(enabled, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if first.Calculation.Outcome.Kind != "success" || first.Calculation.Outcome.Value != "67" ||
@@ -322,7 +322,7 @@ func TestDiscoveryHandlerCommitsOnceAndNeverAnnouncesReplay(t *testing.T) {
 		t.Fatalf("transport replay announced discovery: %+v", replay)
 	}
 	if conflict := apiRequest(enabled, owner, http.MethodPost, "/api/calculations",
-		`{"requestId":"one-action","expression":"69","angleUnit":"deg"}`); conflict.Code != http.StatusConflict {
+		`{"requestId":"one-action","expression":"69"}`); conflict.Code != http.StatusConflict {
 		t.Fatalf("changed request replay accepted: %d, %s", conflict.Code, conflict.Body.String())
 	}
 	session := decodeBody[contracts.SessionResponse](t,
@@ -330,6 +330,13 @@ func TestDiscoveryHandlerCommitsOnceAndNeverAnnouncesReplay(t *testing.T) {
 	if !session.DiscoveriesAvailable || len(session.Achievements) != 1 ||
 		session.Achievements[0].ID != "six_seven" || len(session.DiscoveryCatalog) != 8 {
 		t.Fatalf("session did not recover earned catalog: %+v", session)
+	}
+	for _, definition := range session.DiscoveryCatalog {
+		wantSecret := definition.ID == "answer_found" || definition.ID == "six_seven" ||
+			definition.ID == "nice_number" || definition.ID == "result_found"
+		if definition.Secret != wantSecret {
+			t.Fatalf("session supplied incorrect spoiler visibility: %+v", definition)
+		}
 	}
 	disabled := newHandler(db, nil, true, false)
 	off := decodeBody[contracts.SessionResponse](t,
@@ -347,7 +354,7 @@ func TestDiscoveryConcurrentHTTPRetriesAnnounceOnlyOnce(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, true)
 	owner := browserSession(t, handler)
-	const body = `{"requestId":"concurrent-discovery","expression":"60+7","angleUnit":"deg"}`
+	const body = `{"requestId":"concurrent-discovery","expression":"60+7"}`
 	responses := make(chan *httptest.ResponseRecorder, 8)
 	var requests sync.WaitGroup
 	for range 8 {
@@ -418,7 +425,7 @@ func TestDiscoveryHTTPOptionalFailureStillConfirmsCalculation(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT, 'optional award unavailable'); END`); err != nil {
 		t.Fatal(err)
 	}
-	const body = `{"requestId":"optional-failure","expression":"60+7","angleUnit":"deg"}`
+	const body = `{"requestId":"optional-failure","expression":"60+7"}`
 	data := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if data.Calculation.Outcome.Value != "67" || len(data.Achievements) != 0 || len(data.FunEvents) != 0 {
 		t.Fatalf("optional failure altered or overclaimed response: %+v", data)

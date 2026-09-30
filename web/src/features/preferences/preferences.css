@@ -72,7 +72,7 @@
 
 .preferences-label small {
   color: var(--muted);
-  font: 400 .8125rem/1.4 'Golos Text', sans-serif;
+  font: 500 .8125rem/1.4 var(--body);
 }
 
 .preferences-empty {

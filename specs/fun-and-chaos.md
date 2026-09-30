@@ -48,7 +48,7 @@ without changing trigger conditions.
 | `six_seven` | A successful canonical result is exactly `67` | A brief “Сикс-севен!” (“Six seven!” in English) |
 | `nice_number` | A successful result is exactly `69` | A brief, knowing “Nice.” |
 | `result_found` | A successful result is exactly `404` | The result was found, contrary to expectations |
-| `peer_review` | Three consecutive successful deliberate calculations have identical source and angle settings | Excessively thorough checking of arithmetic |
+| `peer_review` | Three consecutive successful deliberate calculations have identical source and mathematical context | Excessively thorough checking of arithmetic |
 | `bracket_architect` | A successful expression has at least six levels of syntactic nesting | Architectural overachievement with parentheses |
 | `scientific_method` | One successful expression uses at least three distinct required named functions | The calculator acknowledges actual scientific ambition |
 | `touch_grass` | The identity reaches 25 accepted calculations | A friendly intervention about excessive calculator use |
@@ -58,10 +58,50 @@ descriptions. An award is earned once per identity and survives ordinary
 restarts. Eligibility uses actual values and parsed facts, not rounded display
 strings or arbitrary substring matches.
 
+The server catalog supplies the following names and required `secret` flags,
+in this stable order:
+
+| Stable ID | Russian name | English name | `secret` |
+|---|---|---|---|
+| `answer_found` | Главный вопрос | The Big Question | `true` |
+| `six_seven` | Мем года | Meme of the Year | `true` |
+| `nice_number` | Тонкий намёк | A Subtle Hint | `true` |
+| `result_found` | Потерянный сигнал | Lost Signal | `true` |
+| `peer_review` | Всё под контролем | Under Control | `false` |
+| `bracket_architect` | Внутренний мир | Inner World | `false` |
+| `scientific_method` | Исследователь | Explorer | `false` |
+| `touch_grass` | Снаружи тоже жизнь | Life Outside | `false` |
+
+Names and icons stay visible in the collection. A locked secret's condition is
+not rendered in its description, tooltip, or accessible label. All locked cards
+use the generic “Not earned” status, without a “Secret” badge or a verbose
+concealment paragraph. Earned cards reveal the description and date. Keep the
+earned counter and a flat grid ordered as earned, ordinary locked, then secret
+locked, preserving catalog order within each category without group headings.
+The collection window, cards, and ceremony use rounded opaque surfaces and
+Monocraft for all copy, scoped separately from the main console.
+
+Locked secret descriptions use one fixed two-line ASCII pattern independent
+of every real condition and its length. Change two glyphs at 4Hz only when
+visible in an open collection, in the foreground, with motion allowed; stop
+when closed, offscreen, hidden, or under reduced motion. The decorative fake
+cipher is not encryption. Assistive technology receives a static concealed
+label, never the changing glyphs.
+
+A 600ms progressive decode applies only to a fresh secret grant: its new
+ceremony, or a previously visible locked secret card becoming earned while
+the collection stays open, with its ID present in fresh POST awards. Ordinary
+awards show their description directly. Bootstrap, quiet repair, collection
+reads, reopening, reload, and identity replacement never trigger decoding.
+Reduced motion shows the earned text immediately. Collection opening instead
+uses a 300ms final-size unmask, with header, close control, and focus available
+immediately; reduced motion skips it. Only the inner body scrolls, while outer
+`overflow: clip` keeps the header fixed even during programmatic card scrolling.
+
 The `six_seven` discovery is required for the planned Sprint 0 showcase.
 Rehearse it with `60+7`. Inputs such as `167`, `67/0`, and `6*7` do not qualify,
-nor does a different value whose display rounds to `67`. Use the existing
-comment, achievement, and cooldown rules for this discovery.
+nor does a different value whose display rounds to `67`. Its ordinary comment
+follows comment pacing; its genuinely new award follows the ceremony queue.
 
 The repeated-calculation rule counts deliberate actions, not transport retries.
 The usage count includes accepted mathematical errors but excludes rejected
@@ -76,8 +116,8 @@ reads never emit a milestone comment.
 
 `discovery.New(discovery.DefaultConfig())` selects the eight rules and their
 default thresholds. Configuration can change thresholds or select fewer rules.
-`Catalog()` returns independent copies of their Russian/English names,
-descriptions, and comments.
+`Catalog()` returns independent copies of their required secret flags and
+Russian/English names, descriptions, and comments.
 
 `Rules.Match(Input)` returns eligible IDs without granting awards or changing
 state. Supply the current accepted record, its owner's unique accepted count
@@ -134,18 +174,28 @@ participants satisfy a condition simultaneously.
 
 ## Comedy pacing
 
-Apply one shared presentation policy:
+Separate new-award ceremonies from ordinary humor:
 
 - No more than one prominent effect or achievement announcement at a time.
-- Ordinary comments and achievement announcements share a per-view cooldown
-  of at least 15 seconds.
+- Ordinary comments have a per-view cooldown of 15 seconds and use only the
+  newest visible calculation response. Coalesce or suppress comment bursts.
+- New-award ceremonies consume `POST /api/calculations` response `achievements`,
+  not comment `funEvents`. Queue every valid same-generation response's awards,
+  including responses too old to replace the visible result.
+- Deduplicate awards by ID per identity and reset on identity replacement.
+  New submissions never clear the queue. Bootstrap, history, collection reads,
+  retries, and reload do not replay awards.
+- Each award shows its original pixel-art icon, earned heading, name, and
+  unlocked description. A 1.25-second visual burst precedes a 7.5-second readable
+  card; hover, focus, and background tabs pause the readable interval.
+- The ceremony does not steal focus, block typing, open a modal automatically,
+  or intercept clicks behind its spectacle. Its collection action opens the
+  matching earned card.
 - Large personal scenes have a per-identity cooldown of at least 120 seconds.
 - Large collective scenes have a room-wide cooldown of at least 120 seconds.
-- Strong eligibility and room-wide cooldowns are enforced by the service.
-- Burst events are coalesced or suppressed, not queued for later sequential
-  interruption.
-- An earned achievement may appear quietly in the collection even when its
-  announcement is suppressed.
+- Scene eligibility and durable cooldowns are enforced by the service.
+- Scenes are suppressed rather than queued for later interruption. A ceremony
+  takes precedence over ordinary comments and comic scenes.
 - Reaction counter updates do not consume a full notification per update.
 
 An actively requested reduction playback is not interrupted by a large gag.
@@ -156,10 +206,24 @@ Enforce input and request-rate limits separately from effect cooldowns.
 
 ## Settings and rehearsal
 
-Provide the ability to disable humor and, independently, large theatrical
-effects. These presentation settings do not alter mathematics or achievement
-eligibility when the achievement feature is enabled. Earned progress remains
-available without requiring its announcements to be shown.
+Provide independent humor, special-effects, and sound preferences.
+`Preferences.largeEffects` has the settings label `«Спецэффекты»`;
+`Preferences.soundEnabled` defaults to `true` and is persisted by the header
+speaker control, whose muted state shows a slash. These settings do not alter
+mathematics or award eligibility. A basic earned notice is still shown when
+humor or special effects are off.
+
+The award cue is an original short five-step Web Audio synthesis. Activate
+audio only from a trusted user gesture; playback before interaction is not
+guaranteed. A new intentional button, Enter, or keypad calculation dispatch
+plays a quiet 65ms triangle tick starting at 440Hz in the same audio context.
+This is dispatch feedback, not a success sound. Typing, empty input,
+Shift+Enter, IME composition, retries, and collection browsing remain silent.
+An active submit tick is replaced by the next dispatch, never queued. The
+award cue takes priority, preempts a submit tick, and suppresses ticks while
+playing. Persistent mute stops both; disposal releases both voice sets and the
+shared context. OS reduced motion is a separate visual constraint, not a sound
+or humor toggle.
 
 Keep thresholds and catalog selection in configuration. Use the defaults above
 unless they are updated in the catalog.
@@ -171,7 +235,8 @@ history, and publication.
 ## Acceptance
 
 Verify actual triggers from different categories, persistent one-time awards,
-effect expiry, deduplication, and cooldown behavior under bursts.
+effect expiry, deduplication, comment/scene cooldown boundaries, and lossless
+award queuing under bursts and out-of-order responses.
 
 Show that humor can be disabled without changing a result or error, and that
 the theatrical incident always restores the interface. With localization,

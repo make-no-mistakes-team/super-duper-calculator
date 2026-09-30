@@ -41,7 +41,7 @@ func TestPublicOriginBoundary(t *testing.T) {
 		{"null", http.StatusForbidden},
 	} {
 		request := httptest.NewRequest(http.MethodPost, "http://backend:8080/api/calculations",
-			strings.NewReader(`{"requestId":"origin-check","expression":"1+1","angleUnit":"deg"}`))
+			strings.NewReader(`{"requestId":"origin-check","expression":"1+1"}`))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", tc.origin)
 		request.AddCookie(cookies[0])
@@ -61,7 +61,7 @@ func TestUntrustedForwardedOrigin(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	handler := newHandler(db, nil, true, false)
 	request := httptest.NewRequest(http.MethodPost, "http://calculator.example/api/calculations",
-		strings.NewReader(`{"requestId":"spoof","expression":"1","angleUnit":"deg"}`))
+		strings.NewReader(`{"requestId":"spoof","expression":"1"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", "https://attacker.example")
 	request.Header.Set("X-Forwarded-Host", "attacker.example")

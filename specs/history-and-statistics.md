@@ -12,7 +12,7 @@ A record preserves:
 
 - its identifier and deliberate action identifier;
 - the original submitted expression;
-- effective angle unit and mathematical semantics version;
+- mathematical semantics version;
 - canonical result or structured mathematical error;
 - server creation time;
 - trusted calculation facts needed by enabled statistics or achievements.
@@ -54,9 +54,13 @@ Keep older records reachable.
 Selecting a record:
 
 1. Restores the original expression into the editor.
-2. Restores its angle unit and visibly updates the angle indicator.
-3. Does not submit, duplicate history, trigger humor, or publish anything.
-4. Allows editing before a new deliberate calculation.
+2. Does not submit, duplicate history, trigger humor, or publish anything.
+3. Allows editing before a new deliberate calculation.
+
+There is no angle setting to restore. Preserve degree notation already present
+in the source; historical source and outcomes are never converted to the
+current semantics. Recalculation is a deliberate new action using the current
+engine.
 
 If a restored expression uses an unavailable extension, keep it readable and
 editable and identify the unsupported feature. Display its stored result.
@@ -74,6 +78,11 @@ If a record's semantics version cannot be reproduced, retain its stored result
 and report playback as unavailable.
 
 ## Optional personal statistics
+
+Statistics is the fourth lower tool-bay entry, separate from History. It shows
+three top-level counts: total accepted calculations, successes, and mathematical
+errors. Expandable details contain the remaining metrics. History contains
+records only; the achievement collection opens from the header.
 
 Use a small set of metrics that follow from authoritative records:
 
@@ -119,8 +128,11 @@ catch-up can resume after interruption or restart without skipping awards.
 New actions evaluate the unprocessed suffix with only the recent context their
 rules require.
 
-Keep a pre-upgrade backup: binaries supporting only schema versions 1–3 reject
-version 4. Upgrading preserves existing history and earned achievements.
+Migration `005_expression_angle_notation.sql` advances the schema to version 5
+and drops only the obsolete angle column. History, canonical outcomes, awards,
+scene state, and reconciliation checkpoints are preserved without expression
+rewrites. Keep a pre-upgrade backup: binaries supporting an older schema
+reject version 5.
 
 ## Room aggregates
 
@@ -135,7 +147,7 @@ Room presence and activity data are short-lived.
 ## Acceptance
 
 Verify restart durability, separate-browser isolation, paging beyond the first
-page, successful and erroneous records, and context-correct reuse.
+page, successful and erroneous records, and unchanged-source reuse.
 
 An old record can be opened while in a room without being published. A new
 calculation of its restored expression follows the current, visibly indicated

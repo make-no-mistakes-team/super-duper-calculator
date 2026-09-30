@@ -25,7 +25,7 @@ func TestStatisticsAPITracksOwnedAcceptedActions(t *testing.T) {
 	if empty.TotalCalculations != 0 || empty.LongestExpression != nil || empty.MaxParsedDepth != nil || empty.Operators == nil || empty.Functions == nil {
 		t.Fatalf("empty statistics = %+v", empty)
 	}
-	body := `{"requestId":"scientific","expression":"sqrt(81)+2^3","angleUnit":"deg"}`
+	body := `{"requestId":"scientific","expression":"sqrt(81)+2^3"}`
 	first := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	var retries sync.WaitGroup
 	for range 8 {
@@ -39,13 +39,13 @@ func TestStatisticsAPITracksOwnedAcceptedActions(t *testing.T) {
 	retries.Wait()
 	for _, next := range []string{
 		strings.Replace(body, "scientific", "new-deliberate-action", 1),
-		`{"requestId":"division","expression":"1/0","angleUnit":"deg"}`,
-		`{"requestId":"syntax","expression":"sqrt(","angleUnit":"deg"}`,
+		`{"requestId":"division","expression":"1/0"}`,
+		`{"requestId":"syntax","expression":"sqrt("}`,
 	} {
 		decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", next), http.StatusOK)
 	}
-	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", `{"requestId":"rejected","expression":"1"}`), http.StatusBadRequest)
-	oversized := `{"requestId":"too-long","expression":"` + strings.Repeat("1", 1025) + `","angleUnit":"deg"}`
+	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", `{"requestId":"rejected"}`), http.StatusBadRequest)
+	oversized := `{"requestId":"too-long","expression":"` + strings.Repeat("1", 1025) + `"}`
 	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", oversized), http.StatusRequestEntityTooLarge)
 	stats := get(owner)
 	if stats.TotalCalculations != 4 || stats.Successes != 2 || stats.MathematicalErrors != 2 || stats.DivisionByZeroAttempts != 1 {
@@ -92,7 +92,7 @@ func TestStatisticsDisableAndDerivationFailureLeaveCoreAvailable(t *testing.T) {
 	enabled := newHandler(db, nil, true, false)
 	disabled := newHandler(db, nil, false, false)
 	owner := browserSession(t, enabled)
-	body := `{"requestId":"first","expression":"60+7","angleUnit":"deg"}`
+	body := `{"requestId":"first","expression":"60+7"}`
 	first := decodeBody[contracts.CalculationResponse](t, apiRequest(enabled, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	caps := decodeBody[contracts.Capabilities](t, apiRequest(disabled, nil, http.MethodGet, "/api/capabilities", ""), http.StatusOK)
 	if caps.Features.Statistics {

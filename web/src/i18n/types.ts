@@ -10,7 +10,6 @@ export type HistoryMessages = {
 
 export type CalculationMessages = {
   unsupported: string;
-  angleUnitLabel: { deg: string; rad: string };
   outcomeLabel: { success: string; error: string };
   mathErrors: Record<string, string>;
   mathErrorUnknown: string;
@@ -47,7 +46,7 @@ export type CalculationMessages = {
   copyFailed: string;
   copyAnnouncement: string;
   copyFailedAnnouncement: string;
-  correct: string;
+  goToError: string;
   restoreExpression: string;
   extensions: { factorial: string; percentage: string; remainder: string };
 };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import type { SourceSpan } from '../../contracts';
 
-export type CalculatorTool = 'functions' | 'keypad' | 'history' | 'settings';
+export type CalculatorTool = 'functions' | 'keypad' | 'history' | 'statistics' | 'settings';
 
 type EditorFocus = {
   selection?: SourceSpan;

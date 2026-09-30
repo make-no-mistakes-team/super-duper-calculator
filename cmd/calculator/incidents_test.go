@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -535,26 +536,55 @@ func TestIncidentSQLFailurePreservesCommittedAction(t *testing.T) {
 
 func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "private", "legacy.sqlite")
-	db, err := storage.Open(t.Context(), path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
+	// Build the actual historical schema, not a current database with its
+	// version marker lowered after newer migrations have already changed it.
+	for _, migration := range []string{"001_core.sql", "002_achievements.sql"} {
+		schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "storage", "migrations", migration))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(t.Context(), string(schema)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	start := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
-	prior := saveDiscoveryAction(t, db, "owner", "award", "60+7", start)
-	saveDiscoveryAction(t, db, "owner", "first", "1/0", start.Add(time.Second))
-	saveDiscoveryAction(t, db, "owner", "second", "1/0", start.Add(2*time.Second))
 	if _, err := db.ExecContext(t.Context(), `
-		INSERT INTO achievements (session_id, achievement_id, calculation_id, earned_at)
-		VALUES ('owner', 'six_seven', ?, ?)`,
-		prior.ID, prior.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+		INSERT INTO sessions (id, expires_at) VALUES ('owner', 4102444800);
+		PRAGMA user_version = 2;
+	`); err != nil {
 		t.Fatal(err)
 	}
-	// Reconstruct a populated v2 file by removing only later schema objects.
 	if _, err := db.ExecContext(t.Context(), `
-		DROP INDEX calculations_owner_effect_window;
-		DROP TABLE personal_effects;
-		DROP TABLE discovery_progress;
-		PRAGMA user_version = 2`); err != nil {
+		INSERT INTO calculations
+			(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
+		VALUES
+			('award', 'owner', 'award', '60+7', 'deg', 'binary64-v1',
+				'{"kind":"success","value":"67"}',
+				'{"operators":{"+":1},"functions":{},"operationCount":1,"depth":0}', ?),
+			('first', 'owner', 'first', '1/0', 'deg', 'binary64-v1',
+				'{"kind":"error","error":{"code":"DIVISION_BY_ZERO","stage":"evaluate","params":{},"span":{"start":1,"end":2}}}',
+				'{"operators":{"/":1},"functions":{},"operationCount":1,"depth":0}', ?),
+			('second', 'owner', 'second', '1/0', 'deg', 'binary64-v1',
+				'{"kind":"error","error":{"code":"DIVISION_BY_ZERO","stage":"evaluate","params":{},"span":{"start":1,"end":2}}}',
+				'{"operators":{"/":1},"functions":{},"operationCount":1,"depth":0}', ?)`,
+		start.Format(time.RFC3339Nano), start.Add(time.Second).Format(time.RFC3339Nano),
+		start.Add(2*time.Second).Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `
+		INSERT INTO achievements (session_id, achievement_id, calculation_id, earned_at)
+		VALUES ('owner', 'six_seven', 'award', ?)`, start.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -578,7 +608,7 @@ func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if version != 4 || actions != 3 || awards != 1 {
+	if version != 5 || actions != 3 || awards != 1 {
 		t.Fatalf("v2 migration lost history: version=%d actions=%d awards=%d", version, actions, awards)
 	}
 	third := saveDiscoveryAction(t, migrated, "owner", "third", "1/0", start.Add(3*time.Second))

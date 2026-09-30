@@ -106,6 +106,12 @@ relationships, and one-time achievement awards. Preserve canonical result
 strings losslessly; SQL affinity or formatting must not replace them with
 rounded display values.
 
+The current schema version is 5. Migration
+`005_expression_angle_notation.sql` drops the obsolete `angle_unit` column,
+preserving history, awards, scene state, and discovery checkpoints. Stored
+expressions, outcomes, and semantics versions are not rewritten. No legacy
+mathematical evaluator or historical expression conversion is retained.
+
 ### File lifecycle
 
 Restarts and application replacements reopen the same resolved database path.
@@ -227,9 +233,8 @@ Accounts, password recovery, and cross-device synchronization are out of scope.
 
 `GET /api/capabilities` reports:
 
-- `semanticsVersion`;
-- supported operators and function arities;
-- supported angle units and default `deg`;
+- `semanticsVersion`, currently `binary64-v2`;
+- supported operators, including required postfix `°`, and function arities;
 - the advertised input budgets;
 - optional feature availability: operation extensions, statistics,
   achievements, themes, minimal presentation, localization, reduction playback,
@@ -239,7 +244,7 @@ Availability controls which features the UI offers. The server validates every
 request independently.
 
 `calculation.MathematicalCapabilities()` supplies the canonical mathematical
-version, operators, function arities, angle settings, and input budgets from the
+version, operators, function arities, and input budgets from the
 engine definitions. The HTTP layer adds deployment-specific optional-feature
 availability; it does not maintain a second mathematical description.
 
@@ -271,8 +276,7 @@ A private request has this form:
 ```json
 {
   "requestId": "client-generated-unique-action-id",
-  "expression": "sqrt(81)+2^3",
-  "angleUnit": "deg"
+  "expression": "sin((30+60)°)"
 }
 ```
 
@@ -287,7 +291,8 @@ An intentional room action additionally carries:
 }
 ```
 
-`requestId`, `expression`, and `angleUnit` are required. If `room` is present,
+Only `requestId` and `expression` are required. There is no `angleUnit` field;
+an obsolete angle-mode payload is rejected with HTTP 400. If `room` is present,
 its code and explicit Boolean `publish` are required.
 
 Omitting `room` always means private calculation, regardless of room membership
@@ -302,7 +307,7 @@ An accepted request returns a record with:
 
 - `id`, `requestId`, and server `createdAt` in UTC;
 - the original `expression`;
-- `context`: effective `angleUnit` and `semanticsVersion`;
+- `context`: `{ "semanticsVersion": "binary64-v2" }` for current calculations;
 - `outcome`: either `{ "kind": "success", "value": "<canonical value>" }` or
   `{ "kind": "error", "error": <mathematical error> }`;
 - optional trusted calculation facts for enabled presentation features.
@@ -326,6 +331,18 @@ inside the room stream.
 Personal achievement entries contain a stable achievement `id` and `earnedAt`;
 the calculation response reports newly earned entries, while session bootstrap
 returns the existing collection without requesting new announcements.
+
+Session `discoveryCatalog` entries contain `id`, a required Boolean `secret`,
+and `ru`/`en` objects with localized `name`, `description`, and `comment`.
+The first four catalog entries are secret; the remaining four are not.
+Names and trigger conditions are defined in [Fun & Chaos](fun-and-chaos.md).
+The browser must not render a locked secret's condition in visible text,
+tooltips, or accessible labels.
+
+New-award ceremonies consume the calculation response's `achievements`, not
+comment `funEvents`. Every mounted response from the same session generation
+merges and queues its awards, even if a newer result is already visible.
+Bootstrap, history, retry, and collection reads do not replay ceremonies.
 
 History, action replay, and discovery queries share the storage record
 projection and decoder. Ordinary history and replay decode facts strictly;
@@ -365,7 +382,7 @@ expression is unchanged. A retry of the same action reuses the ID.
 
 Within an anonymous identity:
 
-- the same ID and the same expression, angle setting, and publication context
+- the same ID and the same expression and publication context
   return the original record without additional history, awards, or events;
 - reuse of that ID with different semantic input returns HTTP 409;
 - records from another identity cannot be retrieved by guessing its request ID.
@@ -461,7 +478,7 @@ A successful public calculation event contains only:
 - a public event ID and order;
 - a public participant ID and display alias;
 - the validated mathematical expression;
-- canonical result and relevant angle context;
+- canonical result and mathematical semantics version;
 - server time and applicable public achievement IDs.
 
 Private history identifiers, identity cookies, and raw rejected input are not
@@ -522,7 +539,7 @@ follow a commit; retry the original `requestId` rather than creating a new actio
 ## Acceptance
 
 A real browser can calculate, recover from an expression error, reload owned
-history, and reuse an expression with its angle context. Two browser identities
+history, and reuse its unchanged expression. Two browser identities
 cannot read one another's personal records. Retrying an uncertain submission
 does not duplicate its observable effects. Optional room or reduction failures
 do not invalidate a saved calculation.
