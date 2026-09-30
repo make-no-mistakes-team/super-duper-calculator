@@ -21,10 +21,11 @@ func (t token) span() contracts.SourceSpan {
 // supports function syntax without examining the rest of the expression. The
 // length check and the scan each visit the input once; prefixes are not reparsed.
 type tokenStream struct {
-	source   string
-	offset   int
-	count    int
-	buffered *token
+	source      string
+	offset      int
+	count       int
+	buffered    token
+	hasBuffered bool
 }
 
 func newTokenStream(source string) (*tokenStream, *contracts.MathError) {
@@ -40,21 +41,22 @@ func newTokenStream(source string) (*tokenStream, *contracts.MathError) {
 }
 
 func (s *tokenStream) next() (token, *contracts.MathError) {
-	if s.buffered != nil {
-		found := *s.buffered
-		s.buffered = nil
+	if s.hasBuffered {
+		found := s.buffered
+		s.hasBuffered = false
 		return found, nil
 	}
 	return s.scan()
 }
 
 func (s *tokenStream) peek() (token, *contracts.MathError) {
-	if s.buffered != nil {
-		return *s.buffered, nil
+	if s.hasBuffered {
+		return s.buffered, nil
 	}
 	found, err := s.scan()
 	if err == nil {
-		s.buffered = &found
+		s.buffered = found
+		s.hasBuffered = true
 	}
 	return found, err
 }
