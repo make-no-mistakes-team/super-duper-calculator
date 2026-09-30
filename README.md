@@ -29,6 +29,11 @@ Keep configuration and data out of Git. See
 [local configuration](specs/application-service.md#local-configuration) and
 [backup and restore](specs/application-service.md#backup-and-restore).
 
+To enable the multiplayer backend locally, run `ROOMS_ENABLED=true make dev`.
+The default room code is `demo`. Room UI integration is separate; see the
+[room API guide](docs/multiplayer-api.md) for a working curl walkthrough,
+stream events, and the frontend contract.
+
 ## Build and check
 
 ```sh

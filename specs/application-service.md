@@ -36,6 +36,14 @@ launching a built or downloaded application.
   Keep the database outside this directory.
 - `STATISTICS_ENABLED` and `ACHIEVEMENTS_ENABLED` default to `true`. Either can
   be disabled without disabling calculation or personal history.
+- `ROOMS_ENABLED` defaults to `false`. Enable it for the local room backend.
+  `ROOM_CODE` defaults to `demo` and accepts 1–32 lowercase ASCII letters,
+  digits, or hyphens. Only this configured room exists.
+- `ROOM_PUBLICATION_ENABLED`, `ROOM_REACTIONS_ENABLED`, and
+  `ROOM_EFFECTS_ENABLED` default to `true`. They control new public calculations,
+  reaction mutations, and collective announcements independently. These are
+  process configuration settings; restart after changing them. Disabling
+  announcements does not remove earned event badges.
 
 ## Database configuration
 
@@ -357,8 +365,14 @@ creating additional calculations or replaying old announcements.
 Isolate optional SQL work using separate short transactions, or savepoints only
 for errors that permit rollback to that savepoint.
 
-If saving the calculation fails, return a service error. If room fan-out fails
-after persistence, return the saved result with publication `unavailable`.
+If saving the calculation fails, return a service error. Save the publication
+intent with the personal record, then commit the public event and its final
+`published` decision in a separate transaction. If this publication transaction
+fails, return the saved result with publication `unavailable`; never publish that
+action on retry or recovery. An interrupted pending attempt also becomes
+`unavailable`. SSE delivery starts after the public event commits. Failure to
+deliver to one subscriber does not retract a committed public event or change
+its `published` status.
 
 Each deliberate calculation action gets a new `requestId`, even when its
 expression is unchanged. A retry of the same action reuses the ID.
@@ -452,6 +466,10 @@ version cannot be reproduced, return `REDUCTION_UNAVAILABLE` and retain the
 historical result.
 
 ## Optional room data
+
+The implemented endpoint shapes, stream event payloads, and local walkthrough
+are in the [room API guide](../docs/multiplayer-api.md). The guide is also the
+handoff contract for the room interface.
 
 Room snapshots identify the room, its current stream epoch and sequence,
 approximate presence, recent public events, and reaction aggregates.

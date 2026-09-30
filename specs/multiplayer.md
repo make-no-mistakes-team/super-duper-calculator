@@ -8,6 +8,10 @@ Participants share calculations and react to results in a room.
 
 Provide one preconfigured demo room.
 
+The backend is enabled with `ROOMS_ENABLED=true`; it is off by default while
+the room interface is integrated separately. See the
+[room API guide](../docs/multiplayer-api.md) for local commands and wire payloads.
+
 ## Personal and room entry
 
 - `/` opens the private calculator.
@@ -113,8 +117,10 @@ contracts are defined by the application service.
 - Reconnection does not replay expired scenes or re-announce earned awards.
 - New participants receive a current snapshot with announcements suppressed.
 
-Room feed and presence may reset on a service restart; persistent personal
-history and personal achievements may not.
+The implementation retains the last 100 public calculations, their reactions,
+and event badges in SQLite across restarts. Presence and replay state reset;
+the new stream epoch requires a new join and snapshot. Persistent personal
+history and personal achievements also survive restart.
 
 ## Collective discoveries
 
