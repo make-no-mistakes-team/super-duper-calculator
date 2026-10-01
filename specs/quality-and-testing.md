@@ -373,6 +373,14 @@ For awards, exercise the real collection and ceremony:
   rather than queue; the award cue preempts them, and active/pending ceremonies
   suppress both button and submit cues. Mute and disposal stop all voices in
   their one shared lazy audio context.
+- Check active preemption and cancellation in one trusted browser callback
+  using the production `AchievementAudio` module and native Web Audio nodes.
+  Verify that the ordinary output disconnects before the award starts and that
+  stopping the award cancels every voice, including those scheduled to start
+  later. Separately deliver a real calculation response after the ordinary cue
+  has finished; verify the award, muted controls, and no replay on unmute.
+  Network delivery and browser automation must not be assumed to fit inside
+  a 75ms cue. JavaScript fake clocks do not pause the native audio clock.
 - Measure the native Web Audio output without replacing its nodes, automation,
   or device path. Record absolute peak and maximum sliding 10ms RMS for each
   ordinary cue, including submit, and for the complete overlapping award cue.

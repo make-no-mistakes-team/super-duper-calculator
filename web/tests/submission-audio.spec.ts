@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 import type { Locator, Page } from '@playwright/test';
 import type { CalculationRequest, CalculationResponse } from '../src/contracts';
 import { calculate, expect, holdReply, openCalculator, test } from './calculator-fixture';
@@ -19,6 +21,7 @@ type SoundSchedule = {
 declare global {
   interface Window {
     calculatorAudioProbe: { contexts: AudioContext[]; sounds: SoundSchedule[] };
+    calculatorAudioPreemption: SoundSchedule[];
   }
 }
 
@@ -27,6 +30,11 @@ async function observeAudio(page: Page, measureWaveforms = false) {
   await page.addInitScript((measureWaveforms: boolean) => {
     const probe = { contexts: [] as AudioContext[], sounds: [] as SoundSchedule[] };
     window.calculatorAudioProbe = probe;
+    const resume = AudioContext.prototype.resume;
+    AudioContext.prototype.resume = function () {
+      if (!probe.contexts.includes(this)) probe.contexts.push(this);
+      return resume.call(this);
+    };
     const destinations = new WeakMap<AudioNode, AudioNode | AudioParam>();
     const outputs = new WeakMap<GainNode, SoundSchedule>();
     const createGain = AudioContext.prototype.createGain;
@@ -360,7 +368,78 @@ test('rapid native activations replace button and submit voices in both directio
   await settleAudio(page);
 });
 
-test('award preempts ordinary audio; mute cancels every voice and unmute never replays a visible award', async ({ page }) => {
+test('native award priority stops an active ordinary voice and mute stops every scheduled award voice synchronously', async ({ page }) => {
+  await observeAudio(page);
+  const source = await readFile(new URL('../src/features/discoveries/achievementAudio.ts', import.meta.url), 'utf8');
+  await page.route('**/__audio-fixture__/achievementAudio.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: stripTypeScriptTypes(source),
+  }));
+  await page.route('**/__audio-fixture__/', (route) => route.fulfill({
+    contentType: 'text/html',
+    body: `<!doctype html>
+      <button id="unlock">Unlock native audio</button>
+      <button id="exercise" disabled>Exercise award priority and mute</button>
+      <script type="module">
+        import { AchievementAudio } from './achievementAudio.js';
+        const audio = new AchievementAudio();
+        document.querySelector('#unlock').addEventListener('click', (event) => {
+          if (!event.isTrusted) return;
+          audio.unlock();
+          audio.playButton('open');
+        });
+        const exercise = document.querySelector('#exercise');
+        exercise.addEventListener('click', (event) => {
+          if (!event.isTrusted) return;
+          // No network, automation or event-loop boundary can let a cue finish
+          // between scheduling it and the production cancellation path.
+          const before = window.calculatorAudioProbe.sounds.length;
+          audio.playButton('open');
+          audio.play();
+          // Capture before mute, so its later stop cannot hide broken preemption.
+          window.calculatorAudioPreemption = structuredClone(window.calculatorAudioProbe.sounds.slice(before));
+          audio.playButton('edit');
+          audio.playSubmit();
+          audio.stop();
+        });
+        exercise.disabled = false;
+      </script>`,
+  }));
+  await page.goto('/__audio-fixture__/');
+  await page.getByRole('button', { name: 'Unlock native audio', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.calculatorAudioProbe.contexts.map((context) => context.state)))
+    .toEqual(['running']);
+  await settleAudio(page);
+  const before = (await sounds(page)).length;
+  await page.getByRole('button', { name: 'Exercise award priority and mute', exact: true }).click();
+  const preemption = await page.evaluate(() => window.calculatorAudioPreemption);
+  expect(preemption).toHaveLength(2);
+  const [ordinary, award] = preemption;
+  expect(ordinary!.voices).toHaveLength(1);
+  expect(ordinary!.disconnectedAt).not.toBeNull();
+  expect(ordinary!.disconnectedAt!).toBeLessThanOrEqual(Math.min(...award!.voices.map((voice) => voice.start!)));
+  for (const voice of ordinary!.voices) {
+    expect(voice.stops).toHaveLength(2);
+    expect(voice.stops[1]!).toBeLessThan(voice.stops[0]!);
+  }
+  const scheduled = (await sounds(page)).slice(before);
+  // The ordinary calls during the award must not schedule or queue a cue.
+  expect(scheduled).toHaveLength(2);
+  expect(award!.voices).toHaveLength(5);
+  for (const sound of scheduled) {
+    expect(sound.disconnectedAt).not.toBeNull();
+    for (const voice of sound.voices) {
+      expect(voice.stops).toHaveLength(2);
+      expect(voice.stops[1]!).toBeLessThan(voice.stops[0]!);
+      expect(sound.disconnectedAt!).toBeLessThanOrEqual(voice.stops[1]!);
+    }
+  }
+  await settleAudio(page);
+  expect((await sounds(page)).length).toBe(before + scheduled.length);
+  expect(await page.evaluate(() => window.calculatorAudioProbe.contexts.length)).toBe(1);
+});
+
+test('awards after completed ordinary cues keep priority; mute stays silent and unmute never replays a visible award', async ({ page }) => {
   await observeAudio(page);
   await openCalculator(page);
   await page.locator('#expression').click();
@@ -371,14 +450,20 @@ test('award preempts ordinary audio; mute cancels every voice and unmute never r
   await settleAudio(page);
   const ordinary = await activationSound(page, () => page.locator('#tool-functions').press('Enter'));
   const ordinaryIndex = (await sounds(page)).length - 1;
+  await settleAudio(page);
   await held.deliver();
-  await expect(page.getByRole('complementary', { name: 'Новое достижение', exact: true })).toBeVisible();
+  await expect(page.locator('.result-value')).toHaveText('= 42');
+  const ceremony = page.getByRole('complementary', { name: 'Новое достижение', exact: true });
+  await expect(ceremony).toBeVisible();
+  await expect(ceremony).toHaveAttribute('data-achievement-id', 'answer_found');
   const active = await sounds(page);
   const interrupted = active[ordinaryIndex]!;
   const award = active.at(-1)!;
   expect(profile(award)).not.toEqual(profile(ordinary));
   expect(interrupted.disconnectedAt).not.toBeNull();
-  expect(interrupted.voices.every((voice) => voice.stops.some((stop) => stop < voice.stops[0]!))).toBe(true);
+  // Late delivery follows natural completion; active cancellation is exercised
+  // synchronously above rather than racing the device clock against automation.
+  expect(interrupted.disconnectedAt!).toBeLessThanOrEqual(Math.min(...award.voices.map((voice) => voice.start!)));
   const beforeMute = active.length;
   await page.locator('#tool-keypad').press('Enter');
   expect((await sounds(page)).length).toBe(beforeMute);
@@ -387,7 +472,6 @@ test('award preempts ordinary audio; mute cancels every voice and unmute never r
   await settleAudio(page);
   const mutedAward = (await sounds(page)).at(-1)!;
   expect(mutedAward.disconnectedAt).not.toBeNull();
-  expect(mutedAward.voices.some((voice) => voice.stops.some((stop) => stop < voice.stops[0]!))).toBe(true);
   await page.locator('#tool-functions').click();
   await calculate(page, '2+8');
   expect((await sounds(page)).length).toBe(beforeMute);
