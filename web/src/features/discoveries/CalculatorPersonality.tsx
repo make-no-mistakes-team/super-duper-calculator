@@ -191,6 +191,7 @@ function selectPhrase(contexts: PhraseContext[], used: Set<string>, recent: Phra
 function PixelFace({ mood, reaction }: { mood: FaceMood; reaction: string }) {
   return (
     <svg key={reaction} className="calculator-personality__pixels" data-mood={mood} viewBox="0 0 32 24" width="48" height="36" fill="currentColor" shapeRendering="crispEdges" aria-hidden="true">
+      <path className="calculator-personality__face-surface" d="M4 2h24v2h2v16h-2v2H4v-2H2V4h2z" />
       <path className="calculator-personality__face-frame" d="M4 2h24v2h2v16h-2v2H4v-2H2V4h2zm0 4v12h2v2h20v-2h2V6h-2V4H6v2z" />
       <g className="calculator-personality__eyes">
         <g className="calculator-personality__eye-lids">

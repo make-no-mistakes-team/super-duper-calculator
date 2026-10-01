@@ -272,10 +272,12 @@ For ordinary personality:
   Humor-off disables personality; effects-off and reduced motion simplify
   feedback, and hidden tabs stop nonessential activity.
 - Observe idle hovering, sparse blinking/double blinking, and the brief glance
-  toward the editor on desktop and phone. Keep the whole robot inside its
-  reserved safe envelope without editor overlap or layout shifts. Hold a real
-  calculation response: loading must replace idle motion immediately, followed
-  by the actual result reaction and a return to idle. Effects-off and reduced
+  toward the editor on desktop and phone. The opaque fill must follow the face
+  outline, with no rectangular background around it; the console border remains
+  visible behind the transparent outer corners during movement. Keep the whole
+  robot inside its reserved safe envelope without editor overlap or layout shifts.
+  Hold a real calculation response: loading must replace idle motion immediately,
+  followed by the actual result reaction and a return to idle. Effects-off and reduced
   motion stop all robot loops while preserving the static face; humor-off,
   hidden/offscreen state, and an open priority modal remove the face and its
   loops. Restore each state and check that idle motion resumes.

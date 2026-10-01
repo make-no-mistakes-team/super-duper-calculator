@@ -205,9 +205,11 @@ retraction. There is one bubble, never a deferred comment queue.
 
 Personality is identity-keyed, humor-controlled, foreground-only, and suppressed
 by active/pending awards, modals, or comic scenes. Its pixel face reflects real
-loading, success, error, and recovery. Idle SVG motion uses CSS only: a 6.4-second
-hover with a 3px lift and gentle tilt, sparse blinking on a 17.3-second cycle,
-and a brief down-right glance on a separate 19.1-second cycle. Nested eye-lid
+loading, success, error, and recovery. The opaque SVG fill follows the stepped
+face outline; the wrapper and outer corners stay transparent as the face moves.
+Idle SVG motion uses CSS only: a 4.4-second hover with a 6px lift and gentle tilt,
+sparse blinking on a 17.3-second cycle, and a brief down-right glance on a
+separate 19.1-second cycle. Nested eye-lid
 and eye groups keep blinking and glancing independent. Idle selectors require
 `data-mood="idle"` and `data-minimal="false"`; computation reactions override
 them. Effects-off and reduced motion cancel all idle animation. Existing

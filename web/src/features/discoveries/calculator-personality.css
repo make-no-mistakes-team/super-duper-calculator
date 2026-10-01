@@ -12,7 +12,6 @@
   width: 48px;
   height: 36px;
   pointer-events: none;
-  background: var(--surface);
 }
 
 .calculator-personality__pixels {
@@ -24,6 +23,7 @@
   transform-origin: 50% 75%;
 }
 
+.calculator-personality__face-surface { fill: var(--surface); }
 .calculator-personality__energy { opacity: 0; }
 .calculator-personality__eye-lids {
   transform-box: fill-box;
@@ -31,7 +31,7 @@
 }
 /* Separate clocks keep the quiet idle face from repeating one short routine. */
 .calculator-personality[data-minimal='false'] .calculator-personality__pixels[data-mood='idle'] {
-  animation: personality-idle-hover 6.4s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation: personality-idle-hover 4.4s cubic-bezier(.45, 0, .55, 1) infinite;
 }
 .calculator-personality[data-minimal='false'] .calculator-personality__pixels[data-mood='idle'] .calculator-personality__eyes {
   animation: personality-idle-glance 19.1s steps(1, end) infinite;
@@ -157,8 +157,8 @@
 }
 @keyframes personality-idle-hover {
   0%, 100% { transform: translateY(0) rotate(0); }
-  38%, 48% { transform: translateY(-3px) rotate(-1.5deg); }
-  74% { transform: translateY(-1px) rotate(.8deg); }
+  38%, 48% { transform: translateY(-6px) rotate(-1.5deg); }
+  74% { transform: translateY(-2px) rotate(.8deg); }
 }
 @keyframes personality-idle-glance {
   0%, 66%, 73%, 100% { transform: translate(0, 0); }
