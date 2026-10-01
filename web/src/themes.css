@@ -32,6 +32,7 @@
   --operator-frame: #899491;
   --key-active-background: #303b29;
   --result-background: rgb(3 8 9 / .22);
+  --result-commit-background: rgb(213 255 112 / .1);
   --secondary-foreground: #e3e8e6;
   --syntax-foreground: #c5cccc;
   --mobile-tool-strip-background: rgb(5 10 11 / .96);
@@ -73,6 +74,7 @@ html[data-theme='amber'] {
   --operator-frame: #b99977;
   --key-active-background: #59391e;
   --result-background: rgb(17 9 6 / .3);
+  --result-commit-background: rgb(255 209 138 / .12);
   --secondary-foreground: #f4e6d4;
   --syntax-foreground: var(--secondary-foreground);
   --mobile-tool-strip-background: rgb(20 12 9 / .97);

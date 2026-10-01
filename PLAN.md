@@ -7,10 +7,11 @@
 
 A polished scientific calculator with an unexpectedly playful personality.
 
-At first glance, it is a familiar, calm, attractive tool. Through ordinary use,
-people discover comments, achievements, numerical jokes, escalating reactions,
-and occasional theatrical effects. A shared room can turn that discovery into
-a collective experience.
+It is a familiar, attractive tool with frequent, nonblocking ordinary comments
+and a pixel personality that responds to real calculations. Through use,
+people discover achievements, numerical jokes, escalating reactions, and
+occasional theatrical effects. A shared room can turn that discovery into a
+collective experience.
 
 ## Course requirements
 
@@ -40,7 +41,7 @@ presentation and audience experience.
 - Clear syntax, domain, numerical, and service errors.
 - Database-backed personal history, including accepted erroneous calculations.
 - Anonymous browser identity; no accounts or cross-device history promise.
-- Reuse of expressions and their calculation settings from history.
+- Reuse of saved expressions from history without automatic submission.
 - Russian interface text on first use.
 - Keyboard operation, readable results, and a usable phone layout.
 - Reproducible local operation and meaningful correctness checks.
@@ -109,7 +110,7 @@ the scientific baseline is stable.
 5. A personal-mode calculation remains private even if another tab is in a room.
 6. The calculator remains usable when optional systems are unavailable.
 7. An effect cannot destroy input, trap the user, or conceal the real outcome.
-8. UI localization does not change expression syntax or angle settings.
+8. UI localization does not change expression syntax or mathematical meaning.
 9. Optional features are either complete and usable or absent from the released
    surface; unfinished controls are not part of the demo.
 
@@ -132,11 +133,18 @@ different mathematical, publication, or localization semantics.
 
 ## Default user experience
 
-The ordinary URL opens a private calculator in Russian, using degrees.
-A returning browser restores its saved preferences.
+The ordinary URL opens a private calculator in Russian. Trigonometric arguments
+and inverse results use radians; postfix `°` expresses degrees within the source.
+A returning browser restores its saved preferences, including sound, which is
+enabled by default.
 
 The user can type or paste an expression, calculate, read the outcome, and reuse
 history without encountering a joke or animation that requires interaction.
+
+Functions, Keypad, History, and Statistics share one tool bay. The header opens
+the achievement collection and settings and provides a persistent sound toggle.
+New awards receive a queued, nonblocking ceremony; ordinary comments and comic
+scenes have separate pacing.
 
 A room URL clearly identifies the shared context before entry. New room-mode
 calculations contribute to the shared experience; leaving restores private

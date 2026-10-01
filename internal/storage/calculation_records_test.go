@@ -38,6 +38,8 @@ func TestCalculationRecordFactsPolicies(t *testing.T) {
 		{name: "negative operation count", facts: `{"operationCount":-1}`, strictFacts: &contracts.CalculationFacts{OperationCount: -1}},
 		{name: "negative operator count", facts: `{"operators":{"+":-1}}`, strictFacts: &contracts.CalculationFacts{Operators: map[string]int{"+": -1}}},
 		{name: "negative function count", facts: `{"functions":{"sqrt":-1}}`, strictFacts: &contracts.CalculationFacts{Functions: map[string]int{"sqrt": -1}}},
+		{name: "malformed normalized identity", facts: `{"normalizedExpression":"not-a-parser-identity"}`, strictFacts: &contracts.CalculationFacts{NormalizedExpression: "not-a-parser-identity"}},
+		{name: "malformed structure identity", facts: `{"structureIdentity":"+"}`, strictFacts: &contracts.CalculationFacts{StructureIdentity: "+"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := db.ExecContext(t.Context(), "UPDATE calculations SET facts_json = ? WHERE id = 'action'", test.facts); err != nil {
@@ -70,7 +72,7 @@ func TestCalculationRecordFactsPolicies(t *testing.T) {
 						t.Fatalf("policy %v: facts = %+v, want %+v", policy, record.Facts, wantFacts)
 					}
 					if record.ID != "action" || record.RequestID != "action" || record.Expression != "((((((60+7))))))" ||
-						record.Context.AngleUnit != contracts.Degrees || record.Context.SemanticsVersion != "binary64-v1" ||
+						record.Context.SemanticsVersion != "binary64-v1" ||
 						record.Outcome.Kind != contracts.OutcomeSuccess || record.Outcome.Value != "67" || !record.CreatedAt.Equal(createdAt) ||
 						(sequenced && seq != 1) {
 						t.Fatalf("optional facts changed authoritative record: %+v, sequence %d", record, seq)
@@ -92,9 +94,9 @@ func TestDiscoveryRecordReaderKeepsAuthoritativeFieldsStrict(t *testing.T) {
 		name       string
 		projection string
 	}{
-		{"source", "id, request_id, NULL AS expression, angle_unit, semantics_version, outcome_json, facts_json, created_at"},
-		{"outcome", "id, request_id, expression, angle_unit, semantics_version, 'broken' AS outcome_json, facts_json, created_at"},
-		{"timestamp", "id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, 'broken' AS created_at"},
+		{"source", "id, request_id, NULL AS expression, semantics_version, outcome_json, facts_json, created_at"},
+		{"outcome", "id, request_id, expression, semantics_version, 'broken' AS outcome_json, facts_json, created_at"},
+		{"timestamp", "id, request_id, expression, semantics_version, outcome_json, facts_json, 'broken' AS created_at"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			for _, policy := range []storage.FactsPolicy{storage.StrictFacts, storage.DiscoveryFacts} {

@@ -5,8 +5,7 @@
       "requestId": "example-action-error",
       "expression": "5*(",
       "context": {
-        "angleUnit": "deg",
-        "semanticsVersion": "binary64-v1"
+        "semanticsVersion": "binary64-v2"
       },
       "outcome": {
         "kind": "error",
@@ -29,8 +28,7 @@
       "requestId": "example-action-success",
       "expression": "sqrt(81)+2^3",
       "context": {
-        "angleUnit": "deg",
-        "semanticsVersion": "binary64-v1"
+        "semanticsVersion": "binary64-v2"
       },
       "outcome": {
         "kind": "success",

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -26,14 +27,14 @@ func saveDiscoveryAction(t *testing.T, db *sql.DB, owner, id, expression string,
 		t.Fatal(err)
 	}
 	evaluation, err := calculation.New().Evaluate(t.Context(), calculation.Input{
-		Expression: expression, AngleUnit: contracts.Degrees,
+		Expression: expression,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	record := contracts.CalculationRecord{
 		ID: id, RequestID: id, Expression: expression,
-		Context: contracts.CalculationContext{AngleUnit: contracts.Degrees, SemanticsVersion: calculation.SemanticsVersion},
+		Context: contracts.CalculationContext{SemanticsVersion: calculation.SemanticsVersion},
 		Outcome: evaluation.Outcome, Facts: evaluation.Facts, CreatedAt: when.UTC(),
 	}
 	outcomeJSON, err := json.Marshal(record.Outcome)
@@ -46,10 +47,10 @@ func saveDiscoveryAction(t *testing.T, db *sql.DB, owner, id, expression string,
 	}
 	if _, err := db.ExecContext(t.Context(), `
 		INSERT INTO calculations
-			(id, session_id, request_id, expression, angle_unit, semantics_version,
+			(id, session_id, request_id, expression, semantics_version,
 				outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, owner, id, expression, record.Context.AngleUnit, record.Context.SemanticsVersion,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, owner, id, expression, record.Context.SemanticsVersion,
 		string(outcomeJSON), string(factsJSON), when.UTC().Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func fixedDiscoveryService(db *sql.DB) *discoveryService {
 	return service
 }
 
-func TestDiscoveryServiceEightRealRulesAndComments(t *testing.T) {
+func TestDiscoveryServiceOriginalRulesAndComments(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	service := fixedDiscoveryService(db)
 	start := service.now().Add(-2 * time.Second)
@@ -122,21 +123,8 @@ func TestDiscoveryServiceEightRealRulesAndComments(t *testing.T) {
 		}
 	}
 	collection, catalog, err := service.Collection(t.Context(), "owner")
-	if err != nil || len(collection) != 8 || len(catalog) != 8 {
+	if err != nil || len(collection) != 8 || len(catalog) != 22 {
 		t.Fatalf("catalog/collection = %+v / %+v, %v", catalog, collection, err)
-	}
-	for _, definition := range catalog {
-		if definition.ID == "" || definition.RU.Name == "" || definition.RU.Description == "" ||
-			definition.RU.Comment == "" || definition.EN.Name == "" ||
-			definition.EN.Description == "" || definition.EN.Comment == "" {
-			t.Fatalf("incomplete discovery catalog entry: %+v", definition)
-		}
-		findDiscoveryAward(t, collection, definition.ID)
-	}
-	catalog[0].RU.Name = "external mutation"
-	_, freshCatalog, err := service.Collection(t.Context(), "owner")
-	if err != nil || freshCatalog[0].RU.Name == "external mutation" {
-		t.Fatalf("catalog mutated across collections: %+v, %v", freshCatalog, err)
 	}
 }
 
@@ -211,11 +199,11 @@ func TestDiscoveryCollectionQuietlyCatchesUpAcrossBatchesAndBadFacts(t *testing.
 		t.Fatal(err)
 	}
 	firstCollection, catalog, err := service.Collection(t.Context(), "owner")
-	if err != nil || len(catalog) != 8 || len(firstCollection) != 3 {
+	if err != nil || len(catalog) != 22 || len(firstCollection) != 4 {
 		t.Fatalf("large history reconciliation: %+v, %+v, %v", firstCollection, catalog, err)
 	}
 	for id, offset := range map[string]int{
-		"peer_review": 2, "touch_grass": 24, "six_seven": 269,
+		"peer_review": 2, "touch_grass": 24, "six_seven": 269, "unscathed": 9,
 	} {
 		award := findDiscoveryAward(t, firstCollection, id)
 		if !award.EarnedAt.Equal(start.Add(time.Duration(offset) * time.Millisecond)) {
@@ -308,7 +296,7 @@ func TestDiscoveryHandlerCommitsOnceAndNeverAnnouncesReplay(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	enabled := newHandler(db, nil, true, true)
 	owner := browserSession(t, enabled)
-	body := `{"requestId":"one-action","expression":"60+7","angleUnit":"deg"}`
+	body := `{"requestId":"one-action","expression":"60+7"}`
 	first := decodeBody[contracts.CalculationResponse](t,
 		apiRequest(enabled, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if first.Calculation.Outcome.Kind != "success" || first.Calculation.Outcome.Value != "67" ||
@@ -322,14 +310,24 @@ func TestDiscoveryHandlerCommitsOnceAndNeverAnnouncesReplay(t *testing.T) {
 		t.Fatalf("transport replay announced discovery: %+v", replay)
 	}
 	if conflict := apiRequest(enabled, owner, http.MethodPost, "/api/calculations",
-		`{"requestId":"one-action","expression":"69","angleUnit":"deg"}`); conflict.Code != http.StatusConflict {
+		`{"requestId":"one-action","expression":"69"}`); conflict.Code != http.StatusConflict {
 		t.Fatalf("changed request replay accepted: %d, %s", conflict.Code, conflict.Body.String())
 	}
 	session := decodeBody[contracts.SessionResponse](t,
 		apiRequest(enabled, owner, http.MethodGet, "/api/session", ""), http.StatusOK)
 	if !session.DiscoveriesAvailable || len(session.Achievements) != 1 ||
-		session.Achievements[0].ID != "six_seven" || len(session.DiscoveryCatalog) != 8 {
+		session.Achievements[0].ID != "six_seven" || len(session.DiscoveryCatalog) != 22 {
 		t.Fatalf("session did not recover earned catalog: %+v", session)
+	}
+	for _, definition := range session.DiscoveryCatalog {
+		wantSecret := definition.ID == "answer_found" || definition.ID == "six_seven" ||
+			definition.ID == "nice_number" || definition.ID == "result_found" ||
+			definition.ID == "quiet_after_storm" || definition.ID == "paper_tiger" ||
+			definition.ID == "mirror_room" || definition.ID == "parallel_worlds" ||
+			definition.ID == "fourth_wall" || definition.ID == "unexpected_tail"
+		if definition.Secret != wantSecret {
+			t.Fatalf("session supplied incorrect spoiler visibility: %+v", definition)
+		}
 	}
 	disabled := newHandler(db, nil, true, false)
 	off := decodeBody[contracts.SessionResponse](t,
@@ -347,7 +345,7 @@ func TestDiscoveryConcurrentHTTPRetriesAnnounceOnlyOnce(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, true)
 	owner := browserSession(t, handler)
-	const body = `{"requestId":"concurrent-discovery","expression":"60+7","angleUnit":"deg"}`
+	const body = `{"requestId":"concurrent-discovery","expression":"60+7"}`
 	responses := make(chan *httptest.ResponseRecorder, 8)
 	var requests sync.WaitGroup
 	for range 8 {
@@ -418,7 +416,7 @@ func TestDiscoveryHTTPOptionalFailureStillConfirmsCalculation(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT, 'optional award unavailable'); END`); err != nil {
 		t.Fatal(err)
 	}
-	const body = `{"requestId":"optional-failure","expression":"60+7","angleUnit":"deg"}`
+	const body = `{"requestId":"optional-failure","expression":"60+7"}`
 	data := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if data.Calculation.Outcome.Value != "67" || len(data.Achievements) != 0 || len(data.FunEvents) != 0 {
 		t.Fatalf("optional failure altered or overclaimed response: %+v", data)
@@ -528,7 +526,7 @@ func TestDiscoveryInterruptedCatchupResumesAcrossReopenAndStreakBoundary(t *test
 	if err != nil || progress.AcceptedCount != discoveryBatchSize || progress.LastSequence != discoveryBatchSize {
 		t.Fatalf("interrupted checkpoint = %+v, %v", progress, err)
 	}
-	// A mandatory field outside the bounded predecessor window is now unreadable.
+	// A mandatory field inside the evaluated prefix is now unreadable.
 	// Successful resumption proves this evaluated prefix is not replayed.
 	if _, err := db.ExecContext(t.Context(), `
 		DROP TRIGGER interrupt_catchup;
@@ -545,12 +543,13 @@ func TestDiscoveryInterruptedCatchupResumesAcrossReopenAndStreakBoundary(t *test
 	t.Cleanup(func() { _ = reopened.Close() })
 	service = fixedDiscoveryService(reopened)
 	collection, _, err := service.Collection(t.Context(), "owner")
-	if err != nil || len(collection) != 4 {
+	if err != nil || len(collection) != 5 {
 		t.Fatalf("resumed collection = %+v, %v", collection, err)
 	}
 	for id, offset := range map[string]int{
 		"touch_grass": 24, "peer_review": discoveryBatchSize,
-		"six_seven": 2*discoveryBatchSize + 5, "result_found": total - 1,
+		"second_wind": discoveryBatchSize - 2,
+		"six_seven":   2*discoveryBatchSize + 5, "result_found": total - 1,
 	} {
 		award := findDiscoveryAward(t, collection, id)
 		if !award.EarnedAt.Equal(start.Add(time.Duration(offset) * time.Second)) {
@@ -593,7 +592,7 @@ func TestDiscoveryIncrementalActionsDoNotReplayEvaluatedPrefix(t *testing.T) {
 	}
 	next := saveDiscoveryAction(t, db, "owner", "incremental-answer", "60+7", start.Add(2*time.Minute))
 	awards, _, err = service.Process(t.Context(), "owner", next)
-	if err != nil || len(awards) != 1 || awards[0].ID != "six_seven" {
+	if err != nil || len(awards) != 2 || awards[0].ID != "six_seven" || awards[1].ID != "second_wind" {
 		t.Fatalf("normal action restarted prefix or replayed grants: %+v, %v", awards, err)
 	}
 	progress, err := storage.ReadDiscoveryProgress(t.Context(), db, "owner")
@@ -645,7 +644,7 @@ func TestDiscoveryCompetingReconciliationsKeepEarliestSource(t *testing.T) {
 		}
 	}
 	collection, _, err := services[0].Collection(t.Context(), "owner")
-	if err != nil || len(collection) != 2 {
+	if err != nil || len(collection) != 3 {
 		t.Fatalf("competing collection = %+v, %v", collection, err)
 	}
 	award := findDiscoveryAward(t, collection, "six_seven")
@@ -661,5 +660,247 @@ func TestDiscoveryCompetingReconciliationsKeepEarliestSource(t *testing.T) {
 	progress, err := storage.ReadDiscoveryProgress(t.Context(), db, "owner")
 	if err != nil || progress.AcceptedCount != int64(total) || progress.LastSequence != int64(total) {
 		t.Fatalf("competing prefix skipped actions: %+v, %v", progress, err)
+	}
+}
+
+func TestNewDiscoveryRulesDurableBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		rule        string
+		expressions []string
+		wantIndex   int
+		gap         time.Duration
+	}{
+		{"recovery", "second_wind", []string{"1/0", "sqrt(-1)", "2+2"}, 2, 0},
+		{"success is not recovery", "second_wind", []string{"2+2", "3+3"}, -1, 0},
+		{"three parsed routes", "alternate_routes", []string{"2+2", " (2 + 2) ", "3+1", "2*2", "2^2"}, 4, 0},
+		{"tree not histogram", "alternate_routes", []string{"1+1*2", "(1+1)*1.5", "3^1"}, 2, 0},
+		{"literal spelling is not route", "alternate_routes", []string{"4", "4.0", "((4))", "sqrt(16)"}, -1, 0},
+		{"zero eight operations", "quiet_after_storm", []string{"1+1+1+1+1+1+1-7", "1+1+1+1+1+1+1+1-8"}, 1, 0},
+		{"nonzero is not quiet", "quiet_after_storm", []string{"1+1+1+1+1+1+1+1-7"}, -1, 0},
+		{"paper tiger", "paper_tiger", []string{"sqrt(16)/abs(-4)+ln(1)"}, 0, 0},
+		{"paper tiger distinct scientific functions", "paper_tiger", []string{"sqrt(1)+sqrt(0)+ln(1)", "sqrt(1)+abs(0)+mod(0,2)"}, -1, 0},
+		{"five increasing", "gaining_altitude", []string{"8", "9", "10", "11", "12"}, 4, 0},
+		{"equal breaks increasing", "gaining_altitude", []string{"1", "2", "2", "3", "4", "5"}, -1, 0},
+		{"error breaks increasing", "gaining_altitude", []string{"1", "2", "1/0", "3", "4", "5", "6"}, -1, 0},
+		{"mirror", "mirror_room", []string{"3", "-3", "3"}, 2, 0},
+		{"zero is not mirror", "mirror_room", []string{"0", "-0", "0"}, -1, 0},
+		{"error breaks mirror", "mirror_room", []string{"3", "1/0", "-3", "3"}, -1, 0},
+		{"distinct error collection", "trouble_collector", []string{"1+", "2", "1/0", "4", "sqrt(-1)"}, 4, 0},
+		{"unknown and overflow are not syntax or domain", "trouble_collector", []string{"hello", "1/0", "1e308*1e308"}, -1, 0},
+		{"ten successes", "unscathed", []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, 9, 0},
+		{"error breaks ten successes", "unscathed", []string{"1", "2", "3", "4", "5", "1/0", "6", "7", "8", "9", "10"}, -1, 0},
+		{"strict grand scale", "grand_scale", []string{"1e12", "-1e12", "-1000000000001"}, 2, 0},
+		{"strict tiny scale", "last_pixel", []string{"0", "1e-12", "-1e-12", "-1e-13"}, 3, 0},
+		{"trig parity", "parallel_worlds", []string{"sin(90°)", "1", "sin(pi/2)"}, 2, 0},
+		{"unrelated degrees do not count", "parallel_worlds", []string{"sin(0)+0°", "sin(0)"}, -1, 0},
+		{"literal does not count as trig", "parallel_worlds", []string{"sin(90°)", "1"}, -1, 0},
+		{"seven days normalized expression", "time_loop", []string{"SIN(0)", " sin(((0.0))) "}, 1, 7 * 24 * time.Hour},
+		{"just before seven days", "time_loop", []string{"SIN(0)", " sin(((0.0))) "}, -1, 7*24*time.Hour - time.Nanosecond},
+		{"same result is not same expression", "time_loop", []string{"2+2", "2*2"}, -1, 7 * 24 * time.Hour},
+		{"russian greeting retained", "fourth_wall", []string{"  ПРИВЕТ  "}, 0, 0},
+		{"english greeting retained", "fourth_wall", []string{" HeLLo\t"}, 0, 0},
+		{"whole greeting only", "fourth_wall", []string{"hello+1", "привет мир"}, -1, 0},
+		{"computed binary64 tail", "unexpected_tail", []string{"0.30000000000000004", "0.1+0.2"}, 1, 0},
+		{"signed grouped literal is not computation", "unexpected_tail", []string{"((+0.30000000000000004))"}, -1, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, path := boundaryDatabase(t)
+			start := time.Date(2026, 1, 2, 3, 4, 5, 123, time.UTC)
+			service := fixedDiscoveryService(db)
+			var earned time.Time
+			for i, expression := range test.expressions {
+				when := start.Add(time.Duration(i) * time.Second)
+				if i == len(test.expressions)-1 && test.gap != 0 {
+					when = start.Add(test.gap)
+				}
+				record := saveDiscoveryAction(t, db, "owner", fmt.Sprintf("rule-%d", i), expression, when)
+				awards, _, err := service.Process(t.Context(), "owner", record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]string, 0, len(awards))
+				for _, award := range awards {
+					ids = append(ids, award.ID)
+				}
+				if got := slices.Contains(ids, test.rule); got != (i == test.wantIndex) {
+					t.Fatalf("action %d (%s) awards %v; target %s expected at %d", i, expression, ids, test.rule, test.wantIndex)
+				}
+				if i == test.wantIndex {
+					earned = when
+				}
+				if test.rule == "fourth_wall" && record.Outcome.Kind != contracts.OutcomeError {
+					t.Fatalf("greeting changed mathematics: %+v", record.Outcome)
+				}
+				if i == (len(test.expressions)-1)/2 {
+					if err := db.Close(); err != nil {
+						t.Fatal(err)
+					}
+					db, err = storage.Open(t.Context(), path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = db.Close() })
+					service = fixedDiscoveryService(db)
+				}
+			}
+			collection, _, err := service.Collection(t.Context(), "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, award := range collection {
+				if award.ID == test.rule && (test.wantIndex < 0 || !award.EarnedAt.Equal(earned)) {
+					t.Fatalf("collection changed first trigger: %+v", award)
+				}
+			}
+			if test.wantIndex >= 0 {
+				findDiscoveryAward(t, collection, test.rule)
+			}
+		})
+	}
+}
+
+func TestDiscoveryIndexedEvidenceAndStreaksResumeAcrossBatchRestart(t *testing.T) {
+	db, path := boundaryDatabase(t)
+	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	loopStart := start.Add(2 * time.Second) // first SQRT(9) success
+	want := map[string]int{
+		"alternate_routes": 270, "parallel_worlds": 128, "time_loop": 129,
+		"gaining_altitude": 134, "unscathed": 137, "mirror_room": 143,
+	}
+	for i := range 271 {
+		expression := "1/0"
+		switch {
+		case i == 0:
+			expression = "2+2"
+		case i == 1:
+			expression = "sin(90°)"
+		case i == 2:
+			expression = "SQRT(9)"
+		case i == 126:
+			expression = "2*2"
+		case i == 128:
+			expression = "sin(pi/2)"
+		case i == 129:
+			expression = " sqrt(((9.0))) "
+		case i >= 130 && i <= 139:
+			expression = fmt.Sprint(i - 140)
+		case i == 141 || i == 143:
+			expression = "3"
+		case i == 142:
+			expression = "-3"
+		case i == 270:
+			expression = "2^2"
+		}
+		when := start.Add(time.Duration(i) * time.Second)
+		if i >= 129 {
+			when = loopStart.Add(7*24*time.Hour + time.Duration(i-129)*time.Second)
+		}
+		saveDiscoveryAction(t, db, "owner", fmt.Sprintf("evidence-%03d", i), expression, when)
+	}
+	if _, err := db.ExecContext(t.Context(), fmt.Sprintf(`
+		CREATE TRIGGER pause_evidence BEFORE UPDATE ON discovery_progress
+		WHEN NEW.accepted_count > %d BEGIN SELECT RAISE(ABORT, 'pause'); END`, discoveryBatchSize)); err != nil {
+		t.Fatal(err)
+	}
+	service := fixedDiscoveryService(db)
+	if _, _, err := service.Collection(t.Context(), "owner"); err == nil {
+		t.Fatal("deterministic interruption did not interrupt")
+	}
+	if _, err := db.ExecContext(t.Context(), `
+		DROP TRIGGER pause_evidence;
+		UPDATE calculations SET outcome_json = 'unreadable processed prefix' WHERE id = 'evidence-000'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := storage.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service = fixedDiscoveryService(db)
+	collection, _, err := service.Collection(t.Context(), "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, index := range want {
+		when := start.Add(time.Duration(index) * time.Second)
+		if index >= 129 {
+			when = loopStart.Add(7*24*time.Hour + time.Duration(index-129)*time.Second)
+		}
+		award := findDiscoveryAward(t, collection, id)
+		if !award.EarnedAt.Equal(when) {
+			t.Fatalf("%s moved first source: %+v, want %v", id, award, when)
+		}
+	}
+	current := saveDiscoveryAction(t, db, "owner", "post-restart", "2^2", start.Add(8*24*time.Hour))
+	awards, events, err := service.Process(t.Context(), "owner", current)
+	if err != nil || len(awards) != 0 || len(events) != 0 {
+		t.Fatalf("quiet collection re-announced after restart: %+v, %+v, %v", awards, events, err)
+	}
+}
+
+func TestTimeLoopUsesEarliestStoredSuccessNotSequenceOrProcessingClock(t *testing.T) {
+	db, path := boundaryDatabase(t)
+	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	service := fixedDiscoveryService(db)
+	first := saveDiscoveryAction(t, db, "owner", "first-clock", "SIN(0)", start.Add(5*24*time.Hour))
+	if _, _, err := service.Process(t.Context(), "owner", first); err != nil {
+		t.Fatal(err)
+	}
+	earlier := saveDiscoveryAction(t, db, "owner", "earlier-clock", "sin(((0.0)))", start)
+	if awards, _, err := service.Process(t.Context(), "owner", earlier); err != nil || slices.ContainsFunc(awards, func(a contracts.Achievement) bool { return a.ID == "time_loop" }) {
+		t.Fatalf("backward clock invented elapsed week: %+v, %v", awards, err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := storage.Open(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service = fixedDiscoveryService(db)
+	repeat := saveDiscoveryAction(t, db, "owner", "week-later", " sin(0) ", start.Add(7*24*time.Hour))
+	awards, _, err := service.Process(t.Context(), "owner", repeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	award := findDiscoveryAward(t, awards, "time_loop")
+	if !award.EarnedAt.Equal(repeat.CreatedAt) {
+		t.Fatalf("processing clock replaced stored trigger: %+v", award)
+	}
+	replay, events, err := service.Process(t.Context(), "owner", repeat)
+	if err != nil || len(replay) != 0 || len(events) != 0 {
+		t.Fatalf("repeat re-announced grant: %+v, %+v, %v", replay, events, err)
+	}
+}
+
+func TestDiscoveryIdentityEvidenceDoesNotCrossMathematicalSemantics(t *testing.T) {
+	db, _ := boundaryDatabase(t)
+	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	for i, expression := range []string{"2+2", "2*2", "sin(90°)"} {
+		record := saveDiscoveryAction(t, db, "owner", fmt.Sprintf("old-semantics-%d", i), expression, start)
+		if _, err := db.ExecContext(t.Context(), "UPDATE calculations SET semantics_version = 'different-semantics' WHERE id = ?", record.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := fixedDiscoveryService(db)
+	if _, _, err := service.Collection(t.Context(), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	for i, expression := range []string{"2^2", "sin(pi/2)", " ((2+2)) "} {
+		record := saveDiscoveryAction(t, db, "owner", fmt.Sprintf("current-semantics-%d", i), expression, start.Add(7*24*time.Hour))
+		awards, _, err := service.Process(t.Context(), "owner", record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, award := range awards {
+			if award.ID == "alternate_routes" || award.ID == "parallel_worlds" || award.ID == "time_loop" {
+				t.Fatalf("old mathematical context manufactured new identity grant: %+v", awards)
+			}
+		}
 	}
 }

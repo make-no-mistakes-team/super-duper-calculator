@@ -134,6 +134,7 @@ export function ComicIncident({ events, enabled, onActiveChange }: ComicIncident
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.isComposing) return;
+      if (document.querySelector('dialog[open]')) return;
       event.preventDefault();
       event.stopPropagation();
       dismiss();

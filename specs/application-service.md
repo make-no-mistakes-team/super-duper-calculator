@@ -106,6 +106,21 @@ relationships, and one-time achievement awards. Preserve canonical result
 strings losslessly; SQL affinity or formatting must not replace them with
 rounded display values.
 
+Migration `005_expression_angle_notation.sql` drops the obsolete `angle_unit` column,
+preserving history, awards, scene state, and discovery checkpoints. Stored
+expressions, outcomes, and semantics versions are not rewritten. No legacy
+mathematical evaluator or historical expression conversion is retained.
+
+The current schema version is 6. Migration `006_discovery_evidence.sql` adds
+durable discovery state and owner/semantics-scoped indexes for result routes,
+direct-trig variants, and normalized expression success timestamps. It resets
+the old development discovery checkpoint and accepted count to zero for quiet
+catch-up from stored outcomes and facts. Existing history and awards remain;
+historical source is never reparsed using today's engine. Missing parser
+identities stay missing and cannot supply identity-specific evidence. This is
+a development schema cutover, not a promise of compatibility with old local
+progress.
+
 ### File lifecycle
 
 Restarts and application replacements reopen the same resolved database path.
@@ -227,9 +242,8 @@ Accounts, password recovery, and cross-device synchronization are out of scope.
 
 `GET /api/capabilities` reports:
 
-- `semanticsVersion`;
-- supported operators and function arities;
-- supported angle units and default `deg`;
+- `semanticsVersion`, currently `binary64-v2`;
+- supported operators, including required postfix `°`, and function arities;
 - the advertised input budgets;
 - optional feature availability: operation extensions, statistics,
   achievements, themes, minimal presentation, localization, reduction playback,
@@ -239,7 +253,7 @@ Availability controls which features the UI offers. The server validates every
 request independently.
 
 `calculation.MathematicalCapabilities()` supplies the canonical mathematical
-version, operators, function arities, angle settings, and input budgets from the
+version, operators, function arities, and input budgets from the
 engine definitions. The HTTP layer adds deployment-specific optional-feature
 availability; it does not maintain a second mathematical description.
 
@@ -271,8 +285,7 @@ A private request has this form:
 ```json
 {
   "requestId": "client-generated-unique-action-id",
-  "expression": "sqrt(81)+2^3",
-  "angleUnit": "deg"
+  "expression": "sin((30+60)°)"
 }
 ```
 
@@ -287,7 +300,8 @@ An intentional room action additionally carries:
 }
 ```
 
-`requestId`, `expression`, and `angleUnit` are required. If `room` is present,
+Only `requestId` and `expression` are required. There is no `angleUnit` field;
+an obsolete angle-mode payload is rejected with HTTP 400. If `room` is present,
 its code and explicit Boolean `publish` are required.
 
 Omitting `room` always means private calculation, regardless of room membership
@@ -302,10 +316,28 @@ An accepted request returns a record with:
 
 - `id`, `requestId`, and server `createdAt` in UTC;
 - the original `expression`;
-- `context`: effective `angleUnit` and `semanticsVersion`;
+- `context`: `{ "semanticsVersion": "binary64-v2" }` for current calculations;
 - `outcome`: either `{ "kind": "success", "value": "<canonical value>" }` or
   `{ "kind": "error", "error": <mathematical error> }`;
 - optional trusted calculation facts for enabled presentation features.
+
+`facts`, when present, includes operation count, operator/function occurrence
+maps, and parsed nesting depth. Named functions, binary operators, and postfix
+operators count as operations; unary signs do not. Optional parser-produced
+fields are:
+
+- `normalizedExpression`: an opaque parsed-expression identity preserving
+  operations and canonical numeric leaves, independent of whitespace, case,
+  and redundant grouping;
+- `structureIdentity`: an opaque operator/function-tree identity that ignores
+  numeric leaf values and redundant grouping;
+- `trigWithDegrees`: whether degree conversion occurs in an argument of a
+  direct `sin`, `cos`, or `tan` call.
+
+These fields describe the parsed calculation, not a new evaluator or display
+expression. They may be absent from older records; absence is not inferred from
+source text. Evidence is scoped by the record's semantics version, and success
+is required before these facts contribute to indexed discovery rules.
 
 A mathematical error has `code`, `stage`, safe `params`, and a nullable `span`
 with `start` and `end` offsets as defined by the engine contract.
@@ -327,6 +359,19 @@ Personal achievement entries contain a stable achievement `id` and `earnedAt`;
 the calculation response reports newly earned entries, while session bootstrap
 returns the existing collection without requesting new announcements.
 
+Session `discoveryCatalog` entries contain `id`, a required Boolean `secret`,
+and `ru`/`en` objects with localized `name`, `description`, and `comment`.
+There are 22 entries, ten marked secret. Names, stable ordering, trigger
+conditions, and individual secrecy flags are defined in
+[Fun & Chaos](fun-and-chaos.md#personal-discovery-catalog).
+The browser must not render a locked secret's condition in visible text,
+tooltips, or accessible labels.
+
+New-award ceremonies consume the calculation response's `achievements`, not
+comment `funEvents`. Every mounted response from the same session generation
+merges and queues its awards, even if a newer result is already visible.
+Bootstrap, history, retry, and collection reads do not replay ceremonies.
+
 History, action replay, and discovery queries share the storage record
 projection and decoder. Ordinary history and replay decode facts strictly;
 discovery eligibility may discard malformed or negative optional facts.
@@ -343,6 +388,18 @@ Each completed batch commits its awards and reconciliation progress together.
 Later calls resume unfinished history after the last committed batch, including
 after restart; they do not repeat the already evaluated prefix or announce
 historical awards.
+
+Discovery evaluation uses `discovery.Input{Calculation, AcceptedCount, State,
+Evidence}` rather than a preceding-record window. Match against prior state and
+indexed evidence, then advance state once for each new accepted action.
+`storage.ReadDiscoveryEvidence` reads at most three distinct structures for a
+canonical result, direct-trig variant bits, and the earliest successful
+normalized-expression timestamp. Batch-local evidence includes earlier actions
+in that batch, never later actions. Commit this evidence, serialized state,
+checkpoint, and grants atomically through `storage.CommitDiscoveryProgress`;
+on a competing checkpoint, discard and reload the uncommitted batch.
+See [History & Statistics](history-and-statistics.md#achievements-and-joke-statistics)
+for the storage interface.
 
 ## Durable submission and repeated actions
 
@@ -365,7 +422,7 @@ expression is unchanged. A retry of the same action reuses the ID.
 
 Within an anonymous identity:
 
-- the same ID and the same expression, angle setting, and publication context
+- the same ID and the same expression and publication context
   return the original record without additional history, awards, or events;
 - reuse of that ID with different semantic input returns HTTP 409;
 - records from another identity cannot be retrieved by guessing its request ID.
@@ -461,7 +518,7 @@ A successful public calculation event contains only:
 - a public event ID and order;
 - a public participant ID and display alias;
 - the validated mathematical expression;
-- canonical result and relevant angle context;
+- canonical result and mathematical semantics version;
 - server time and applicable public achievement IDs.
 
 Private history identifiers, identity cookies, and raw rejected input are not
@@ -522,7 +579,7 @@ follow a commit; retry the original `requestId` rather than creating a new actio
 ## Acceptance
 
 A real browser can calculate, recover from an expression error, reload owned
-history, and reuse an expression with its angle context. Two browser identities
+history, and reuse its unchanged expression. Two browser identities
 cannot read one another's personal records. Retrying an uncertain submission
 does not duplicate its observable effects. Optional room or reduction failures
 do not invalidate a saved calculation.

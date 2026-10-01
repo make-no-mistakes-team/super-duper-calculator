@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
@@ -21,7 +23,6 @@ type discoveryService struct {
 	db             *sql.DB
 	rules          discovery.Rules
 	catalog        []contracts.DiscoveryDefinition
-	previousLimit  int
 	followupCounts []int64
 	now            func() time.Time
 }
@@ -39,7 +40,7 @@ func newDiscoveryService(db *sql.DB, enabled bool) *discoveryService {
 	catalog := make([]contracts.DiscoveryDefinition, len(authored))
 	for i, definition := range authored {
 		catalog[i] = contracts.DiscoveryDefinition{
-			ID: definition.ID,
+			ID: definition.ID, Secret: definition.Secret,
 			RU: contracts.DiscoveryText{
 				Name: definition.RU.Name, Description: definition.RU.Description, Comment: definition.RU.Comment,
 			},
@@ -50,7 +51,6 @@ func newDiscoveryService(db *sql.DB, enabled bool) *discoveryService {
 	}
 	return &discoveryService{
 		db: db, rules: rules, catalog: catalog,
-		previousLimit:  max(config.PeerReviewCount-1, 0),
 		followupCounts: []int64{50, 100},
 		now:            time.Now,
 	}
@@ -179,9 +179,11 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 		for _, award := range collection {
 			seen[award.ID] = true
 		}
-		previous, err := s.predecessors(ctx, owner, progress.LastSequence)
-		if err != nil {
-			return nil, 0, err
+		var state discovery.State
+		if progress.StateJSON != "" {
+			if err := json.Unmarshal([]byte(progress.StateJSON), &state); err != nil {
+				return nil, 0, fmt.Errorf("decode discovery state: %w", err)
+			}
 		}
 		rows, err := s.db.QueryContext(ctx, `
 			SELECT `+storage.SequencedCalculationRecordColumns+`
@@ -193,6 +195,11 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 		}
 		var batch []storage.DiscoveryGrant
 		next := progress
+		type action struct {
+			sequence int64
+			record   contracts.CalculationRecord
+		}
+		actions := make([]action, 0, discoveryBatchSize)
 		for rows.Next() {
 			if err := ctx.Err(); err != nil {
 				_ = rows.Close()
@@ -204,30 +211,7 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 				_ = rows.Close()
 				return nil, 0, fmt.Errorf("decode discovery calculation: %w", err)
 			}
-			next.LastSequence = seq
-			next.AcceptedCount++
-			matched := s.rules.Match(discovery.Input{
-				Calculation: record, AcceptedCount: next.AcceptedCount, Previous: previous,
-			})
-			var first []string
-			for _, id := range matched {
-				if !seen[id] {
-					seen[id] = true
-					first = append(first, id)
-				}
-			}
-			if len(first) != 0 {
-				batch = append(batch, storage.DiscoveryGrant{CalculationID: record.ID, IDs: first})
-			}
-			// The configured streak length bounds memory even across many
-			// history batches; newest prior action stays at index zero.
-			if s.previousLimit != 0 {
-				if len(previous) < s.previousLimit {
-					previous = append(previous, contracts.CalculationRecord{})
-				}
-				copy(previous[1:], previous[:len(previous)-1])
-				previous[0] = record
-			}
+			actions = append(actions, action{seq, record})
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
@@ -236,10 +220,89 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 		if err := rows.Close(); err != nil {
 			return nil, 0, fmt.Errorf("close discovery history: %w", err)
 		}
+		// The sole SQLite connection is free before indexed evidence reads.
+		// Batch-local caches include the uncommitted prefix without history scans.
+		type valueKey struct{ semantics, value string }
+		type expressionKey struct{ semantics, expression string }
+		values := make(map[valueKey]discovery.Evidence)
+		expressions := make(map[expressionKey]time.Time)
+		var evidenceUpdates []storage.DiscoveryEvidence
+		for _, action := range actions {
+			record := action.record
+			next.LastSequence = action.sequence
+			next.AcceptedCount++
+			var evidence discovery.Evidence
+			if record.Outcome.Kind == contracts.OutcomeSuccess && record.Facts != nil {
+				vkey := valueKey{record.Context.SemanticsVersion, record.Outcome.Value}
+				ekey := expressionKey{record.Context.SemanticsVersion, record.Facts.NormalizedExpression}
+				var ok bool
+				evidence, ok = values[vkey]
+				earliest, expressionLoaded := expressions[ekey]
+				if !ok || !expressionLoaded {
+					stored, err := storage.ReadDiscoveryEvidence(ctx, s.db, owner,
+						vkey.semantics, vkey.value, ekey.expression)
+					if err != nil {
+						return nil, 0, fmt.Errorf("read discovery evidence: %w", err)
+					}
+					if !ok {
+						evidence = stored
+					}
+					if !expressionLoaded {
+						earliest = stored.Earliest
+					}
+				}
+				evidence.Earliest = earliest
+				matched := s.rules.Match(discovery.Input{Calculation: record,
+					AcceptedCount: next.AcceptedCount, State: &state, Evidence: evidence})
+				var first []string
+				for _, id := range matched {
+					if !seen[id] {
+						seen[id] = true
+						first = append(first, id)
+					}
+				}
+				if len(first) != 0 {
+					batch = append(batch, storage.DiscoveryGrant{CalculationID: record.ID, IDs: first})
+				}
+				route := record.Facts.StructureIdentity
+				if route != "" && len(evidence.Routes) < 3 && !slices.Contains(evidence.Routes, route) {
+					evidence.Routes = append(evidence.Routes, route)
+				}
+				trig := discovery.TrigVariant(record.Facts)
+				evidence.Trig |= trig
+				if earliest.IsZero() || record.CreatedAt.Before(earliest) {
+					earliest = record.CreatedAt
+				}
+				values[vkey] = evidence
+				expressions[ekey] = earliest
+				evidenceUpdates = append(evidenceUpdates, storage.DiscoveryEvidence{
+					SemanticsVersion: vkey.semantics, Value: vkey.value,
+					Structure: route, Trig: trig, Expression: ekey.expression, Earliest: earliest,
+				})
+			} else {
+				var first []string
+				for _, id := range s.rules.Match(discovery.Input{Calculation: record,
+					AcceptedCount: next.AcceptedCount, State: &state}) {
+					if !seen[id] {
+						seen[id] = true
+						first = append(first, id)
+					}
+				}
+				if len(first) != 0 {
+					batch = append(batch, storage.DiscoveryGrant{CalculationID: record.ID, IDs: first})
+				}
+			}
+			state.Advance(record)
+		}
 		if next == progress {
 			return nil, 0, errors.New("discovery history ended before snapshot")
 		}
-		awarded, err := storage.CommitDiscoveryProgress(ctx, s.db, owner, progress, next, batch)
+		stateJSON, err := json.Marshal(state)
+		if err != nil {
+			return nil, 0, fmt.Errorf("encode discovery state: %w", err)
+		}
+		next.StateJSON = string(stateJSON)
+		awarded, err := storage.CommitDiscoveryProgress(ctx, s.db, owner, progress, next, batch, evidenceUpdates...)
 		if errors.Is(err, storage.ErrDiscoveryProgressChanged) {
 			continue
 		}
@@ -248,36 +311,4 @@ func (s *discoveryService) reconcile(ctx context.Context, owner string, through 
 		}
 		currentAwards = append(currentAwards, awarded[currentID]...)
 	}
-}
-
-// predecessors recovers only the bounded streak context immediately before the
-// checkpoint. History and awards remain authoritative; no history is copied into
-// progress, and optional corrupt facts keep the same tolerance as catch-up.
-func (s *discoveryService) predecessors(ctx context.Context, owner string, through int64) ([]contracts.CalculationRecord, error) {
-	previous := make([]contracts.CalculationRecord, 0, s.previousLimit)
-	if through == 0 || s.previousLimit == 0 {
-		return previous, nil
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+storage.CalculationRecordColumns+`
-		FROM calculations WHERE session_id = ? AND seq <= ?
-		ORDER BY seq DESC LIMIT ?`, owner, through, s.previousLimit)
-	if err != nil {
-		return nil, fmt.Errorf("read discovery predecessors: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		record, err := storage.ReadCalculationRecord(rows, nil, storage.DiscoveryFacts)
-		if err != nil {
-			return nil, fmt.Errorf("decode discovery predecessor: %w", err)
-		}
-		previous = append(previous, record)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate discovery predecessors: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close discovery predecessors: %w", err)
-	}
-	return previous, nil
 }

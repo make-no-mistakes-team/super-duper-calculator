@@ -64,7 +64,7 @@ func decodeBody[T any](t *testing.T, w *httptest.ResponseRecorder, status int) T
 func TestSessionBootstrapOwnsIdentityCreation(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, false)
-	body := `{"requestId":"anonymous","expression":"2+2","angleUnit":"deg"}`
+	body := `{"requestId":"anonymous","expression":"2+2"}`
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, "/api/history", ""},
 		{http.MethodPost, "/api/calculations", body},
@@ -118,7 +118,7 @@ func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
-	body := `{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"deg"}`
+	body := `{"requestId":"same-action","expression":"0.1+0.2"}`
 	responses := make(chan *httptest.ResponseRecorder, 16)
 	var group sync.WaitGroup
 	for range 16 {
@@ -139,14 +139,13 @@ func TestConcurrentActionReplayAndContextConflicts(t *testing.T) {
 		}
 	}
 	for _, changed := range []string{
-		`{"requestId":"same-action","expression":"1","angleUnit":"deg"}`,
-		`{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"rad"}`,
-		`{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"deg","room":{"code":"demo","publish":true}}`,
-		`{"requestId":"same-action","expression":"0.1+0.2","angleUnit":"deg","room":{"code":"demo","publish":false}}`,
+		`{"requestId":"same-action","expression":"1"}`,
+		`{"requestId":"same-action","expression":"0.1+0.2","room":{"code":"demo","publish":true}}`,
+		`{"requestId":"same-action","expression":"0.1+0.2","room":{"code":"demo","publish":false}}`,
 	} {
 		decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", changed), http.StatusConflict)
 	}
-	freshRoom := `{"requestId":"room-action","expression":"1","angleUnit":"deg","room":{"code":"demo","publish":false}}`
+	freshRoom := `{"requestId":"room-action","expression":"1","room":{"code":"demo","publish":false}}`
 	decodeBody[contracts.ErrorResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", freshRoom), http.StatusBadRequest)
 	freshAction := strings.Replace(body, "same-action", "deliberate-action", 1)
 	decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", freshAction), http.StatusOK)
@@ -169,8 +168,8 @@ func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 	insert := func(i int, identity string) {
 		t.Helper()
 		_, err := db.Exec(`INSERT INTO calculations
-			(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
-			VALUES (?, ?, ?, ?, 'rad', 'historical-version', ?, NULL, '2026-01-01T00:00:00Z')`,
+			(id, session_id, request_id, expression, semantics_version, outcome_json, facts_json, created_at)
+			VALUES (?, ?, ?, ?, 'historical-version', ?, NULL, '2026-01-01T00:00:00Z')`,
 			fmt.Sprint(i), identity, fmt.Sprint(i), fmt.Sprintf("historical(%d)", i), `{"kind":"success","value":"0.30000000000000004"}`)
 		if err != nil {
 			t.Fatal(err)
@@ -196,7 +195,7 @@ func TestHistoryPaginationPreservesOwnedHistoricalRecords(t *testing.T) {
 			if record.ID != fmt.Sprint(wantID) || seen[record.ID] {
 				t.Fatalf("unstable historical ordering: got %s, want %d", record.ID, wantID)
 			}
-			if record.Expression != fmt.Sprintf("historical(%d)", wantID) || record.Context.AngleUnit != contracts.Radians ||
+			if record.Expression != fmt.Sprintf("historical(%d)", wantID) ||
 				record.Context.SemanticsVersion != "historical-version" || record.Outcome.Value != "0.30000000000000004" || record.Facts != nil {
 				t.Fatalf("historical context/outcome changed: %+v", record)
 			}
@@ -225,7 +224,7 @@ func TestStorageFailuresDoNotConfirmOrEraseActions(t *testing.T) {
 	db, path := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
-	body := `{"requestId":"committed","expression":"67","angleUnit":"deg"}`
+	body := `{"requestId":"committed","expression":"67"}`
 	original := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	const unsafeDetail = "private SQL diagnostic must not escape"
 	if _, err := db.Exec(`CREATE TRIGGER reject_calculation BEFORE INSERT ON calculations BEGIN SELECT RAISE(ABORT, '` + unsafeDetail + `'); END`); err != nil {
@@ -277,7 +276,7 @@ func TestCorruptOptionalFactsRejectReplayAndHistoryButAllowDiscoveryRepair(t *te
 	db, _ := boundaryDatabase(t)
 	handler := newHandler(db, nil, true, false)
 	owner := browserSession(t, handler)
-	const body = `{"requestId":"saved-action","expression":"60+7","angleUnit":"deg"}`
+	const body = `{"requestId":"saved-action","expression":"60+7"}`
 	original := decodeBody[contracts.CalculationResponse](t, apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
 	if _, err := db.ExecContext(t.Context(), "UPDATE calculations SET facts_json = 'broken optional facts' WHERE id = ?", original.Calculation.ID); err != nil {
 		t.Fatal(err)
@@ -303,6 +302,43 @@ func TestCorruptOptionalFactsRejectReplayAndHistoryButAllowDiscoveryRepair(t *te
 	page := decodeBody[contracts.HistoryPage](t, apiRequest(handler, owner, http.MethodGet, "/api/history", ""), http.StatusOK)
 	if len(page.Items) != 1 || page.Items[0].ID != original.Calculation.ID || page.Items[0].Facts != nil {
 		t.Fatalf("facts repair changed owned history: %+v", page)
+	}
+}
+
+func TestCalculationRequestsUseExpressionAngleNotation(t *testing.T) {
+	db, _ := boundaryDatabase(t)
+	handler := newHandler(db, nil, true, false)
+	owner := browserSession(t, handler)
+	for _, unit := range []string{"deg", "rad"} {
+		body := `{"requestId":"angle-notation","expression":"sin(90°)","angleUnit":"` + unit + `"}`
+		failure := decodeBody[contracts.ErrorResponse](t,
+			apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusBadRequest)
+		if failure.Error.Code != "INVALID_REQUEST" {
+			t.Fatalf("obsolete context returned %+v", failure)
+		}
+	}
+	// Rejected legacy fields do not consume the request ID.
+	const body = `{"requestId":"angle-notation","expression":"sin(90°)"}`
+	first := decodeBody[contracts.CalculationResponse](t,
+		apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
+	if first.Calculation.Outcome.Value != "1" {
+		t.Fatalf("explicit angle notation outcome = %+v", first.Calculation.Outcome)
+	}
+	replay := decodeBody[contracts.CalculationResponse](t,
+		apiRequest(handler, owner, http.MethodPost, "/api/calculations", body), http.StatusOK)
+	if replay.Calculation.ID != first.Calculation.ID {
+		t.Fatalf("two-field request retry duplicated action: %+v", replay)
+	}
+	empty := decodeBody[contracts.CalculationResponse](t,
+		apiRequest(handler, owner, http.MethodPost, "/api/calculations",
+			`{"requestId":"empty-source","expression":""}`), http.StatusOK)
+	if empty.Calculation.Outcome.Error == nil || empty.Calculation.Outcome.Error.Code != contracts.ErrorSyntax {
+		t.Fatalf("explicit empty expression was not a persisted mathematical error: %+v", empty)
+	}
+	page := decodeBody[contracts.HistoryPage](t,
+		apiRequest(handler, owner, http.MethodGet, "/api/history", ""), http.StatusOK)
+	if len(page.Items) != 2 || page.Items[0].ID != empty.Calculation.ID || page.Items[1].ID != first.Calculation.ID {
+		t.Fatalf("rejected fields or replay changed history: %+v", page)
 	}
 }
 

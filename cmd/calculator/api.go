@@ -169,10 +169,9 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	// Missing/null fields are malformed requests, unlike an explicitly empty
 	// expression, which is an accepted mathematical syntax error.
 	var input struct {
-		RequestID  *string              `json:"requestId"`
-		Expression *string              `json:"expression"`
-		AngleUnit  *contracts.AngleUnit `json:"angleUnit"`
-		Room       json.RawMessage      `json:"room"`
+		RequestID  *string         `json:"requestId"`
+		Expression *string         `json:"expression"`
+		Room       json.RawMessage `json:"room"`
 	}
 	decodeErr := decodeRequest(w, r, &input)
 	var sizeError *http.MaxBytesError
@@ -181,13 +180,12 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !errors.Is(decodeErr, io.EOF) ||
-		input.RequestID == nil || input.Expression == nil || input.AngleUnit == nil ||
-		*input.RequestID == "" || len(*input.RequestID) > 128 ||
-		(*input.AngleUnit != contracts.Degrees && *input.AngleUnit != contracts.Radians) {
+		input.RequestID == nil || input.Expression == nil ||
+		*input.RequestID == "" || len(*input.RequestID) > 128 {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
-	request := contracts.CalculationRequest{RequestID: *input.RequestID, Expression: *input.Expression, AngleUnit: *input.AngleUnit}
+	request := contracts.CalculationRequest{RequestID: *input.RequestID, Expression: *input.Expression}
 	if input.Room != nil {
 		var room struct {
 			Code    *string `json:"code"`
@@ -222,7 +220,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "UNSUPPORTED_CONTEXT")
 		return
 	}
-	evaluation, err := a.engine.Evaluate(r.Context(), calculation.Input{Expression: request.Expression, AngleUnit: request.AngleUnit})
+	evaluation, err := a.engine.Evaluate(r.Context(), calculation.Input{Expression: request.Expression})
 	if errors.Is(err, calculation.ErrExpressionLimit) {
 		apiError(w, http.StatusRequestEntityTooLarge, string(contracts.ErrorExpressionLimit))
 		return
@@ -238,7 +236,7 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 	}
 	record := contracts.CalculationRecord{
 		ID: id, RequestID: request.RequestID, Expression: request.Expression,
-		Context: contracts.CalculationContext{AngleUnit: request.AngleUnit, SemanticsVersion: calculation.SemanticsVersion},
+		Context: contracts.CalculationContext{SemanticsVersion: calculation.SemanticsVersion},
 		Outcome: evaluation.Outcome, Facts: evaluation.Facts, CreatedAt: time.Now().UTC(),
 	}
 	outcomeJSON, err := json.Marshal(record.Outcome)
@@ -252,10 +250,10 @@ func (a api) calculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.db.ExecContext(r.Context(), `
-		INSERT INTO calculations (id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO calculations (id, session_id, request_id, expression, semantics_version, outcome_json, facts_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (session_id, request_id) DO NOTHING`,
-		record.ID, owner, record.RequestID, record.Expression, record.Context.AngleUnit,
+		record.ID, owner, record.RequestID, record.Expression,
 		record.Context.SemanticsVersion, string(outcomeJSON), string(factsJSON), record.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		apiError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE")
@@ -302,7 +300,7 @@ func (a api) recordByAction(r *http.Request, owner, requestID string) (contracts
 
 func writeCalculation(w http.ResponseWriter, record contracts.CalculationRecord, request contracts.CalculationRequest,
 	achievements []contracts.Achievement, events []contracts.FunEvent) {
-	if record.Expression != request.Expression || record.Context.AngleUnit != request.AngleUnit || request.Room != nil {
+	if record.Expression != request.Expression || request.Room != nil {
 		apiError(w, http.StatusConflict, "REQUEST_ID_CONFLICT")
 		return
 	}

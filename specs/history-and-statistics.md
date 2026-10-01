@@ -12,7 +12,7 @@ A record preserves:
 
 - its identifier and deliberate action identifier;
 - the original submitted expression;
-- effective angle unit and mathematical semantics version;
+- mathematical semantics version;
 - canonical result or structured mathematical error;
 - server creation time;
 - trusted calculation facts needed by enabled statistics or achievements.
@@ -54,9 +54,13 @@ Keep older records reachable.
 Selecting a record:
 
 1. Restores the original expression into the editor.
-2. Restores its angle unit and visibly updates the angle indicator.
-3. Does not submit, duplicate history, trigger humor, or publish anything.
-4. Allows editing before a new deliberate calculation.
+2. Does not submit, duplicate history, trigger humor, or publish anything.
+3. Allows editing before a new deliberate calculation.
+
+There is no angle setting to restore. Preserve degree notation already present
+in the source; historical source and outcomes are never converted to the
+current semantics. Recalculation is a deliberate new action using the current
+engine.
 
 If a restored expression uses an unavailable extension, keep it readable and
 editable and identify the unsupported feature. Display its stored result.
@@ -74,6 +78,11 @@ If a record's semantics version cannot be reproduced, retain its stored result
 and report playback as unavailable.
 
 ## Optional personal statistics
+
+Statistics is the fourth lower tool-bay entry, separate from History. It shows
+three top-level counts: total accepted calculations, successes, and mathematical
+errors. Expandable details contain the remaining metrics. History contains
+records only; the achievement collection opens from the header.
 
 Use a small set of metrics that follow from authoritative records:
 
@@ -99,11 +108,13 @@ Measured statistics must derive from recorded data.
 The reaction catalog and eligibility rules belong to
 [Fun & Chaos](fun-and-chaos.md).
 
-`storage.CommitDiscoveryProgress(ctx, db, owner, expected, next, grants)`
-commits eligible awards and their evaluated-history checkpoint in one short
-transaction. A competing checkpoint invalidates the uncommitted batch; reload
-and evaluate it against the new prefix. Only newly saved awards are returned,
-grouped by their source calculation.
+`storage.CommitDiscoveryProgress(ctx, db, owner, expected, next, grants,
+evidence...)` commits eligible awards, serialized incremental state, indexed
+evidence, and their evaluated-history checkpoint in one short transaction.
+`DiscoveryProgress` contains `LastSequence`, `AcceptedCount`, and `StateJSON`.
+A competing checkpoint invalidates the uncommitted batch; reload and evaluate
+it against the new prefix. Only newly saved awards are returned, grouped by
+their source calculation.
 
 The first eligible action supplies its stored UTC creation time as `earnedAt`;
 later actions and retries preserve that value. A failed batch advances neither
@@ -116,11 +127,36 @@ adds the durable personal-scene cooldown without changing history or awards.
 Migration `004_discovery_progress.sql` stores each owner's evaluated sequence
 and accepted-action count. Progress and grants advance atomically, so bounded
 catch-up can resume after interruption or restart without skipping awards.
-New actions evaluate the unprocessed suffix with only the recent context their
-rules require.
+New actions evaluate the unprocessed suffix in commit order. Match with prior
+incremental `discovery.State`, then advance it once per accepted record. Streaks,
+recovery, recent numeric values, repeated source, and seen error categories
+survive restart without retaining or scanning a previous-record window.
 
-Keep a pre-upgrade backup: binaries supporting only schema versions 1–3 reject
-version 4. Upgrading preserves existing history and earned achievements.
+Migration `005_expression_angle_notation.sql` drops only the obsolete angle
+column without expression rewrites. Schema 6,
+`006_discovery_evidence.sql`, adds serialized state and three indexed evidence
+tables:
+
+- `discovery_routes`: up to three distinct parser-produced structures per
+  owner, semantics version, and canonical successful result;
+- `discovery_trig`: accumulated direct-trig degree/radian variant bits for
+  that same owner/version/result;
+- `discovery_expressions`: the earliest server success timestamp for each
+  owner/version/normalized-expression identity.
+
+`storage.ReadDiscoveryEvidence(ctx, db, owner, semantics, value, expression)`
+loads the relevant bounded snapshot; earlier actions within the current batch
+also contribute before it commits. The interface and parser facts are defined
+in [Application Service](application-service.md#calculation-record-and-response).
+
+The schema 6 development migration resets old evaluated sequence/count
+checkpoints for quiet catch-up from stored facts and outcomes. It preserves
+records, awards, and scene state, but does not promise old local progress
+compatibility. No historical source is reparsed or converted by the current
+mathematical engine. Old records without normalized expression or structure
+identities cannot supply evidence for the corresponding identity-specific
+rules. They remain readable and still supply applicable outcome/count facts.
+Keep a pre-upgrade backup; older binaries reject a newer schema.
 
 ## Room aggregates
 
@@ -135,7 +171,7 @@ Room presence and activity data are short-lived.
 ## Acceptance
 
 Verify restart durability, separate-browser isolation, paging beyond the first
-page, successful and erroneous records, and context-correct reuse.
+page, successful and erroneous records, and unchanged-source reuse.
 
 An old record can be opened while in a room without being published. A new
 calculation of its restored expression follows the current, visibly indicated

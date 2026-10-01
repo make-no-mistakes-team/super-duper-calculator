@@ -1,28 +1,27 @@
 .statistics-panel {
   min-width: 0;
-  margin: 0 0 20px;
-  border-bottom: 1px solid var(--line);
+  margin: 0;
 }
 
-.statistics-panel__summary {
+.statistics-panel__details > summary {
   min-height: 44px;
   padding: 9px 4px;
   color: var(--muted);
   font: 400 1.25rem/1.3 var(--controls);
 }
 
-.statistics-panel__summary::marker {
+.statistics-panel__details > summary::marker {
   color: var(--muted);
 }
 
-.statistics-panel__summary:hover,
-.statistics-panel[open] > .statistics-panel__summary {
+.statistics-panel__details > summary:hover,
+.statistics-panel__details[open] > summary {
   color: inherit;
 }
 
 .statistics-panel__body {
   min-width: 0;
-  padding: 4px 4px 20px;
+  padding: 4px 4px;
   font-size: .9375rem;
   line-height: 1.5;
 }
@@ -39,6 +38,20 @@
   align-items: baseline;
   gap: 8px 12px;
   padding: 6px 0;
+}
+
+.statistics-panel__totals .statistics-panel__row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.statistics-panel__totals .statistics-panel__row dd {
+  color: var(--accent);
+  font-size: 1.5rem;
+}
+
+.statistics-panel__details {
+  margin-top: 16px;
 }
 
 .statistics-panel__row dt {
@@ -83,7 +96,7 @@
 .statistics-panel__usage h3,
 .statistics-panel__extremes h3 {
   margin: 14px 0 4px;
-  font: 700 1rem/1.4 'Golos Text', sans-serif;
+  font: 600 1rem/1.4 var(--body);
 }
 
 .statistics-panel__usage .statistics-panel__row dt code {

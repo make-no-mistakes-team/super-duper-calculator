@@ -20,19 +20,23 @@ of this local solo candidate.
 4. Reload the page and confirm the saved records remain.
 5. Submit a malformed expression such as `sqrt(81` and show a recoverable error.
 6. With personal discoveries enabled and a fresh anonymous identity, calculate
-   `60+7` and show the real result `67` alongside “Сикс-севен!”.
+   `60+7` and show the real result `67` alongside the “Мем года” award ceremony.
 7. If the current candidate includes another complete personal capability,
    demonstrate it once. Finish with the calculator usable.
 
-The `six_seven` reveal needs a fresh anonymous browser context, humor enabled,
-and no active announcement cooldown. Keep `67` visible during the reaction.
+The `six_seven` award reveal needs a fresh anonymous browser context with
+discoveries enabled. It is not subject to the ordinary comment cooldown and
+still has a basic notice with humor or special effects off. Keep `67` visible.
+With humor enabled, its ordinary comment is “Сикс-севен!”.
 
 Suitable additional reveals include:
 
 - `6*7` for the `42` discovery;
 - `23*3` for the `69` discovery;
 - `sqrt(81)+abs(-2)+ln(e)` for the scientific-function achievement;
-- opening statistics and the achievement collection from history;
+- calculating `sin((30+60)°)` for `1`, then `asin(1)` for a radian result;
+- opening Statistics from the fourth lower tool entry and Achievements from
+  the header;
 - switching between violet and amber themes while preserving input;
 - three deliberate `1/0` submissions for the dismissible comic incident.
 
@@ -83,7 +87,7 @@ saved results and errors remain available and that a restored expression can
 be calculated again.
 
 For the browser presentation, use a fresh anonymous context for a first
-achievement and wait out any previous announcement cooldown. Check the
+achievement. New awards queue without the ordinary comment cooldown. Check the
 visual error and the click-to-reuse history action; API checks alone do not
 establish browser behavior.
 
@@ -91,7 +95,7 @@ establish browser behavior.
 
 For every candidate:
 
-- scientific result and angle-mode behavior;
+- scientific results, radian inverse outputs, and explicit degree notation;
 - understandable syntax and domain errors;
 - committed records retained after restart and reopening the same file;
 - private history and clickable reuse;
@@ -106,10 +110,13 @@ For each included extra:
 
 Exclude unfinished features from the candidate.
 
-Leave at least 15 seconds between discovery announcements. The comic incident
-has a separate 120-second per-identity cooldown and ends within three seconds.
-Settings can independently suppress comments and large effects; awards still
-appear in the collection.
+Leave at least 15 seconds between ordinary comments. New awards queue a
+1.25-second burst followed by a 7.5-second readable card; a later calculation
+must not erase that notice or steal editor focus. The comic incident has a
+separate 120-second per-identity cooldown and ends within three seconds.
+Settings can independently suppress comments and special effects; basic award
+notices and collection progress remain. Sound defaults on, activates after a
+user gesture, and can be muted from the persistent header speaker.
 
 ## Recovery
 

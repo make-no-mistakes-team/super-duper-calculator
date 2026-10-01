@@ -55,10 +55,6 @@ function StatisticsContent({ statistics }: { statistics: PersonalStatistics }) {
           <dt>Математические ошибки</dt>
           <dd>{numberFormatter.format(statistics.mathematicalErrors)}</dd>
         </div>
-        <div className="statistics-panel__row">
-          <dt>Попытки деления на ноль</dt>
-          <dd>{numberFormatter.format(statistics.divisionByZeroAttempts)}</dd>
-        </div>
       </dl>
 
       {statistics.totalCalculations === 0 ? (
@@ -66,7 +62,14 @@ function StatisticsContent({ statistics }: { statistics: PersonalStatistics }) {
           Вычислений пока нет. Сводка заполнится после первого результата.
         </p>
       ) : (
-        <>
+        <details className="statistics-panel__details">
+          <summary>Подробности</summary>
+          <dl>
+            <div className="statistics-panel__row">
+              <dt>Попытки деления на ноль</dt>
+              <dd>{numberFormatter.format(statistics.divisionByZeroAttempts)}</dd>
+            </div>
+          </dl>
           <p className="statistics-panel__note">
             Попытки деления на ноль входят в число ошибок.
           </p>
@@ -103,21 +106,20 @@ function StatisticsContent({ statistics }: { statistics: PersonalStatistics }) {
               </div>
             </dl>
           </div>
-        </>
+        </details>
       )}
     </>
   );
 }
 
 export function StatisticsPanel({ load, refreshKey }: StatisticsPanelProps) {
-  const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ kind: 'idle' });
   const [retry, setRetry] = useState(0);
   const latestRequest = useRef(0);
   const loadedKey = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!open || loadedKey.current === refreshKey) return;
+    if (loadedKey.current === refreshKey) return;
 
     const request = ++latestRequest.current;
     setState({ kind: 'loading', key: refreshKey });
@@ -135,19 +137,12 @@ export function StatisticsPanel({ load, refreshKey }: StatisticsPanelProps) {
     return () => {
       if (request === latestRequest.current) latestRequest.current++;
     };
-  }, [open, refreshKey, load, retry]);
+  }, [refreshKey, load, retry]);
 
   const visibleState = state.kind !== 'idle' && state.key === refreshKey ? state : null;
 
   return (
-    <details
-      className="statistics-panel"
-      onToggle={(event) => {
-        if (!event.currentTarget.open) latestRequest.current++;
-        setOpen(event.currentTarget.open);
-      }}
-    >
-      <summary className="statistics-panel__summary">Статистика</summary>
+    <section className="statistics-panel" aria-label="Личная статистика">
       <div className="statistics-panel__body">
         {visibleState?.kind === 'ready' ? (
           <StatisticsContent statistics={visibleState.statistics} />
@@ -164,6 +159,6 @@ export function StatisticsPanel({ load, refreshKey }: StatisticsPanelProps) {
           </p>
         )}
       </div>
-    </details>
+    </section>
   );
 }

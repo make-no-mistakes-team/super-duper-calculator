@@ -47,8 +47,8 @@ func addCalculation(t *testing.T, db *sql.DB, owner, id, requestID, expression, 
 	t.Helper()
 	_, err := db.ExecContext(t.Context(), `
 		INSERT INTO calculations
-			(id, session_id, request_id, expression, angle_unit, semantics_version, outcome_json, facts_json, created_at)
-		VALUES (?, ?, ?, ?, 'deg', 'historical-version', ?, ?, '2026-01-01T00:00:00Z')
+			(id, session_id, request_id, expression, semantics_version, outcome_json, facts_json, created_at)
+		VALUES (?, ?, ?, ?, 'historical-version', ?, ?, '2026-01-01T00:00:00Z')
 		ON CONFLICT (session_id, request_id) DO NOTHING`, id, owner, requestID, expression, outcome, facts)
 	if err != nil {
 		t.Fatal(err)

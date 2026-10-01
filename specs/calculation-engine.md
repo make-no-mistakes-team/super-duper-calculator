@@ -16,7 +16,7 @@ Expressions use the same syntax in Russian and English interfaces:
 
 - ASCII digits, decimal point `.`, and scientific notation such as `1.25e-3`;
 - literals such as `12`, `12.5`, `.5`, and `5.`;
-- operators `+`, `-`, `*`, `/`, and `^`;
+- operators `+`, `-`, `*`, `/`, and `^`, and required postfix `°`;
 - parentheses and unary `+` and `-`;
 - constants `pi` and `e`;
 - Latin-letter function and constant names are case-insensitive (`sin`, `SIN`,
@@ -32,12 +32,15 @@ Expressions use the same syntax in Russian and English interfaces:
 | `ln(x)` | Natural logarithm; `x > 0` |
 | `log(x)` | Base-ten logarithm; `x > 0` |
 | `log(x, b)` | Logarithm to base `b`; `x > 0`, `b > 0`, `b != 1` |
-| `sin(x)`, `cos(x)`, `tan(x)` | Trigonometry in the selected angle unit |
+| `sin(x)`, `cos(x)`, `tan(x)` | Trigonometry with arguments in radians |
 | `asin(x)`, `acos(x)` | Inverse trigonometry; `-1 <= x <= 1` |
 | `atan(x)` | Inverse tangent |
 
-Inverse trigonometric results use the selected angle unit. `pi` always denotes
-the same numeric constant; changing angle units does not redefine it.
+Inverse trigonometric results use radians. Postfix `°` converts its operand
+using binary64 `x*pi/180`, with multiplication before division. It accepts
+grouped operands: `sin(90°)`, `sin(pi/2)`, and `sin((30+60)°)` are approximately
+`1`; `sin(-30°)` is approximately `-0.5`. `asin(1)` is approximately `pi/2`,
+and `asin(1)*180/pi` is approximately `90`.
 
 There is no implicit multiplication: use `2*pi` and `2*(3+4)`, not `2pi` or
 `2(3+4)`. No assignment, variables, strings, property access, or arbitrary calls
@@ -49,7 +52,7 @@ syntax. Decimal commas and translated function names are not alternate grammars.
 From strongest to weakest:
 
 1. Parenthesized expressions and function calls.
-2. Optional postfix factorial or percentage.
+2. Required postfix degree conversion, or enabled factorial or percentage.
 3. Exponentiation, right-associative.
 4. Unary signs.
 5. Multiplication and division, left-associative.
@@ -71,8 +74,9 @@ Accepted expressions must consume the entire input.
 
 ## Calculation context
 
-- `angleUnit`: `deg` or `rad`; first-use default is `deg`.
-- `semanticsVersion`: a service-owned identifier for the mathematical contract.
+The context contains only `semanticsVersion`, currently `binary64-v2`, a
+service-owned identifier for the mathematical contract. There is no global
+angle mode or default degree setting.
 
 The effective context is stored with every calculation. UI language, theme,
 room membership, and effect preferences are not mathematical context.
@@ -91,10 +95,13 @@ Use real IEEE 754 binary64 arithmetic.
 - A negative base with a non-integer exponent is outside the real-valued domain.
 - `NaN` and `Infinity` are not accepted literals or constants.
 
-Tangent at odd multiples of 90 degrees, and corresponding radian inputs such
+Tangent at odd multiples of `90°`, and corresponding radian inputs such
 as `pi/2`, must report a domain error. This includes cases where a library's
 approximation of `pi` produces a finite value. Numerical tolerance must not
 round small valid results to zero throughout the engine.
+
+Degree conversion reports numerical overflow if `x*pi` overflows, even if
+dividing the mathematical product by 180 would produce a finite value.
 
 ### Values and formatting
 
@@ -131,10 +138,10 @@ The latter is mathematically `220`, but binary64 evaluation can yield
 Remainder follows the dividend's sign: `mod(-7,3) = -1`. It is not Euclidean
 modulo and does not share the `%` spelling.
 
-Only one postfix operator may follow a primary expression without additional
-parentheses. `3!!` is rejected, not interpreted as double factorial or as two
-factorials. `(3!)!` is explicit repeated factorial. Consequently,
-`2^3! = 64` and `-3! = -6`.
+Only one postfix operator (`°`, `!`, or `%`) may follow a primary expression
+without additional parentheses. `3!!`, `30°%`, and `30%°` are rejected.
+`(3!)!` is explicit repeated factorial; `(30%)°` explicitly groups percentage
+before degree conversion. Consequently, `2^3! = 64` and `-3! = -6`.
 
 ## Errors and limits
 
@@ -152,12 +159,18 @@ An error includes its stage (`parse` or `evaluate`), safe message parameters,
 and a relevant source span where available. Spans are zero-based, half-open
 UTF-16 code-unit offsets into the original submitted string, matching browser
 string indexing. A missing operand at end of input may use a zero-width span.
+Unicode input must not turn these into UTF-8 byte offsets. For `tan(90°)`,
+the domain-error span is `[0, 8)`.
 
 For an input within the request length limit, the parser requests tokens in
 source order and reports the first lexical or grammatical error it encounters.
 A later invalid character must not mask an earlier unknown identifier:
 `unknown`, `unknown]`, `unknown@`, `-unknown]`, and `(unknown]` all highlight
-the entire `unknown` token. At most one token of lookahead is buffered; the
+the entire `unknown` token. The same rule applies after degree conversion:
+`90°+unknown]` highlights `unknown` at `[4, 11)`, not the later bracket.
+Scanning tracks byte and UTF-16 positions separately because `°` occupies two
+UTF-8 bytes but one UTF-16 code unit. Buffered lookahead preserves these spans.
+At most one token of lookahead is buffered; the
 input and its prefixes are not retokenized or reparsed, so work stays linear in
 the input length. Arithmetic operators are evaluated only after the whole
 expression has parsed successfully.
@@ -209,8 +222,9 @@ The representation crossing the service boundary is defined in
 ## Acceptance
 
 The core handles the precedence examples above, `sqrt(81)+2^3 = 17`,
-`log(8,2) = 3`, degree/radian contexts, malformed expressions, function domains,
-zero division, overflow, and bounded pathological input.
+`log(8,2) = 3`, radian trigonometry and explicit degree conversion, malformed
+expressions, function domains, zero division, overflow, and bounded
+pathological input.
 
 Check transcendental results with appropriate numerical tolerance. Enabled
 extensions follow the baseline error, history, and presentation rules.

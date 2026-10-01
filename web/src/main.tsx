@@ -1,14 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import '@fontsource/golos-text/cyrillic-400.css';
-import '@fontsource/golos-text/latin-400.css';
-import '@fontsource/golos-text/cyrillic-700.css';
-import '@fontsource/golos-text/latin-700.css';
 import '@fontsource/tiny5/cyrillic-400.css';
 import '@fontsource/tiny5/latin-400.css';
 import '@fontsource/pt-mono/latin-400.css';
 import '@fontsource/pt-mono/cyrillic-400.css';
+import './fonts.css';
 import './themes.css';
 import './styles.css';
 

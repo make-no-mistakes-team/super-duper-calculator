@@ -47,18 +47,18 @@ func advertisedCapabilities(t *testing.T) contracts.Capabilities {
 func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 	advertised := advertisedCapabilities(t)
 	engine := calculation.New()
-	evaluate := func(expression, want string, unit contracts.AngleUnit) {
+	evaluate := func(expression, want string) {
 		t.Helper()
-		result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: expression, AngleUnit: unit})
+		result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: expression})
 		if err != nil || result.Outcome.Kind != "success" || result.Outcome.Value != want {
-			t.Errorf("%q (%s) = %+v, err %v; want %s", expression, unit, result.Outcome, err, want)
+			t.Errorf("%q = %+v, err %v; want %s", expression, result.Outcome, err, want)
 		}
 	}
 
 	operators := map[string]struct{ expression, want string }{
 		"+": {"2+3", "5"}, "-": {"2-3", "-1"}, "*": {"2*3", "6"},
 		"/": {"6/3", "2"}, "^": {"2^3", "8"},
-		"!": {"5!", "120"}, "%": {"10%", "0.1"},
+		"!": {"5!", "120"}, "%": {"10%", "0.1"}, "°": {"0°", "0"},
 	}
 	for _, operator := range advertised.Operators {
 		if _, ok := operators[operator]; !ok {
@@ -66,7 +66,7 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 		}
 	}
 	for operator, example := range operators {
-		evaluate(example.expression, example.want, advertised.DefaultAngleUnit)
+		evaluate(example.expression, example.want)
 		if !slices.Contains(advertised.Operators, operator) {
 			t.Errorf("executable operator %q is not advertised", operator)
 		}
@@ -82,12 +82,12 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 		"exp":  {{[]string{"0"}, "1"}},
 		"ln":   {{[]string{"e"}, "1"}},
 		"log":  {{[]string{"100"}, "2"}, {[]string{"8", "2"}, "3"}},
-		"sin":  {{[]string{"90"}, "1"}},
+		"sin":  {{[]string{"90°"}, "1"}},
 		"cos":  {{[]string{"0"}, "1"}},
 		"tan":  {{[]string{"0"}, "0"}},
-		"asin": {{[]string{"1"}, "90"}},
+		"asin": {{[]string{"1"}, "1.5707963267948966"}},
 		"acos": {{[]string{"1"}, "0"}},
-		"atan": {{[]string{"1"}, "45"}},
+		"atan": {{[]string{"1"}, "0.7853981633974483"}},
 		"mod":  {{[]string{"7", "3"}, "1"}},
 	}
 	for function := range advertised.Functions {
@@ -98,14 +98,14 @@ func TestCapabilitiesAdvertiseExecutableCore(t *testing.T) {
 	for function, examples := range functions {
 		arities := make([]int, 0, len(examples))
 		for _, example := range examples {
-			evaluate(function+"("+strings.Join(example.args, ",")+")", example.want, advertised.DefaultAngleUnit)
+			evaluate(function+"("+strings.Join(example.args, ",")+")", example.want)
 			arities = append(arities, len(example.args))
 		}
 		if !slices.Equal(advertised.Functions[function], arities) {
 			t.Errorf("executable function %q arities %v, advertised %v", function, arities, advertised.Functions[function])
 		}
 	}
-	evaluate("sin(pi/2)", "1", contracts.Radians)
+	evaluate("sin(pi/2)", "1")
 }
 
 func TestCapabilitiesAdvertisedBudgetsMatchEngineBoundaries(t *testing.T) {
@@ -125,11 +125,11 @@ func TestCapabilitiesAdvertisedBudgetsMatchEngineBoundaries(t *testing.T) {
 			strings.Repeat("(", limits.Nesting+1) + "1" + strings.Repeat(")", limits.Nesting+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: tc.accepted, AngleUnit: contracts.Degrees})
+			result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: tc.accepted})
 			if err != nil || result.Outcome.Kind != "success" {
 				t.Fatalf("accepted boundary: outcome %+v, err %v", result.Outcome, err)
 			}
-			_, err = engine.Evaluate(t.Context(), calculation.Input{Expression: tc.rejected, AngleUnit: contracts.Degrees})
+			_, err = engine.Evaluate(t.Context(), calculation.Input{Expression: tc.rejected})
 			if !errors.Is(err, calculation.ErrExpressionLimit) {
 				t.Errorf("past boundary: err %v, want ErrExpressionLimit", err)
 			}
@@ -138,11 +138,11 @@ func TestCapabilitiesAdvertisedBudgetsMatchEngineBoundaries(t *testing.T) {
 
 	// A supplementary character uses two UTF-16 units, not four UTF-8 bytes.
 	atUTF16Limit := "1" + strings.Repeat(" ", limits.ExpressionLength-3) + "😀"
-	result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: atUTF16Limit, AngleUnit: contracts.Degrees})
+	result, err := engine.Evaluate(t.Context(), calculation.Input{Expression: atUTF16Limit})
 	if err != nil || result.Outcome.Error == nil || result.Outcome.Error.Code != "SYNTAX_ERROR" {
 		t.Errorf("UTF-16 boundary: outcome %+v, err %v; want syntax error, not length limit", result.Outcome, err)
 	}
-	_, err = engine.Evaluate(t.Context(), calculation.Input{Expression: " " + atUTF16Limit, AngleUnit: contracts.Degrees})
+	_, err = engine.Evaluate(t.Context(), calculation.Input{Expression: " " + atUTF16Limit})
 	if !errors.Is(err, calculation.ErrExpressionLimit) {
 		t.Errorf("past UTF-16 boundary: err %v, want ErrExpressionLimit", err)
 	}

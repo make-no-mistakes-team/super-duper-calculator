@@ -50,7 +50,11 @@ test('syntax errors remain saved and correction returns focus to the offending e
   expect(result.calculation.outcome.error.code).toBe('SYNTAX_ERROR');
   expect(result.calculation.outcome.error.stage).toBe('parse');
   await expect(page.locator('.result-highlight mark')).toBeVisible();
-  await page.getByRole('button', { name: 'Исправить', exact: true }).click();
+  await page.locator('#expression').fill('123');
+  await expect(page.locator('.result-source code')).toHaveText(malformed);
+  await page.locator('.calculation-result .secondary-button').click();
+  await expect(page.locator('#expression')).toHaveValue(malformed);
+  await page.locator('.calculation-result .secondary-button').click();
   await expect(page.locator('#expression')).toBeFocused();
   await expect(page.locator('#expression')).toHaveValue(malformed);
   expect(await page.locator('#expression').evaluate((element) => {
@@ -76,6 +80,7 @@ test('an unknown name is highlighted and selected before a later invalid charact
     { expression: 'unknown@', start: 0, name: 'unknown' },
     { expression: '-unknown]', start: 1, name: 'unknown' },
     { expression: '(unknown]', start: 1, name: 'unknown' },
+    { expression: '90°+unknown]', start: 4, name: 'unknown' },
     { expression: longInput, start: 0, name: longInput.slice(0, longInput.indexOf(']')) },
   ];
   for (const { expression, start, name } of cases) {
@@ -84,13 +89,30 @@ test('an unknown name is highlighted and selected before a later invalid charact
     expect(result.calculation.outcome.error.code).toBe('UNKNOWN_IDENTIFIER');
     expect(result.calculation.outcome.error.span).toEqual({ start, end: start + name.length });
     await expect(page.locator('.result-highlight mark')).toHaveText(name);
-    await page.getByRole('button', { name: 'Исправить', exact: true }).click();
+    await page.locator('.calculation-result .secondary-button').click();
     await expect(page.locator('#expression')).toBeFocused();
+    await expect(page.locator('#expression')).toHaveValue(expression);
     expect(await page.locator('#expression').evaluate((element) => {
       if (!(element instanceof HTMLTextAreaElement)) throw new Error('Expected the expression editor');
       return { start: element.selectionStart, end: element.selectionEnd };
     })).toEqual({ start, end: start + name.length });
   }
+});
+
+test('error navigation uses server UTF-16 spans without rewriting the source', async ({ page }) => {
+  await openCalculator(page);
+  const source = '1+😀';
+  const result = await calculate(page, source);
+  if (result.calculation.outcome.kind !== 'error' || !result.calculation.outcome.error.span) {
+    throw new Error('Expected the service to locate the invalid symbol');
+  }
+  await page.locator('.calculation-result .secondary-button').click();
+  await expect(page.locator('#expression')).toBeFocused();
+  await expect(page.locator('#expression')).toHaveValue(source);
+  expect(await page.locator('#expression').evaluate((element) => {
+    if (!(element instanceof HTMLTextAreaElement)) throw new Error('Expected the expression editor');
+    return { start: element.selectionStart, end: element.selectionEnd };
+  })).toEqual(result.calculation.outcome.error.span);
 });
 
 test('copy uses the canonical binary64 value rather than the rounded display', async ({ page, context }) => {
@@ -103,31 +125,66 @@ test('copy uses the canonical binary64 value rather than the rounded display', a
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('0.3333333333333333');
 });
 
-test('angle context belongs to the submitted record and an older reply cannot replace the latest result', async ({ page }) => {
+test('explicit degree source survives history and an older reply cannot replace the latest result', async ({ page }) => {
   await openCalculator(page);
-  await page.locator('#angle-unit').selectOption('deg');
-  const delayed = await holdReply(page, '**/api/calculations', (route) => route.request().postDataJSON().expression === 'sin(90)');
+  const delayed = await holdReply(page, '**/api/calculations', (route) => route.request().postDataJSON().expression === 'sin(90°)');
   try {
-    await page.locator('#expression').fill('sin(90)');
+    await page.locator('#expression').fill('sin(90°)');
     await page.locator('#expression').press('Enter');
     await delayed.received;
-    await page.locator('#angle-unit').selectOption('rad');
     const current = await calculate(page, 'cos(pi)');
-    expect(current.calculation.context.angleUnit).toBe('rad');
     expect(current.calculation.outcome).toEqual({ kind: 'success', value: '-1' });
     await delayed.deliver();
     await expect(page.locator('.result-source code')).toHaveText('cos(pi)');
     await expect(page.locator('.result-value')).toHaveText('= -1');
-    await expect(page.locator('.result-angle')).toHaveText('RAD');
     await page.locator('#tool-history').click();
-    const previous = page.locator('.history-item-button').filter({ hasText: 'sin(90)' });
+    const previous = page.locator('.history-item-button').filter({ hasText: 'sin(90°)' });
     await expect(previous.locator('.history-outcome')).toHaveText('= 1');
     await previous.click();
-    await expect(page.locator('#angle-unit')).toHaveValue('deg');
-    await expect(page.locator('#expression')).toHaveValue('sin(90)');
-    const restored = await calculate(page, 'sin(90)');
-    expect(restored.calculation.context.angleUnit).toBe('deg');
+    await expect(page.locator('#expression')).toHaveValue('sin(90°)');
+    const restored = await calculate(page, 'sin(90°)');
     expect(restored.calculation.outcome).toEqual({ kind: 'success', value: '1' });
+  } finally {
+    delayed.release();
+  }
+});
+
+test('fresh awards from an older reply queue without replacing results or replaying on reload', async ({ page }) => {
+  await openCalculator(page);
+  const delayed = await holdReply(page, '**/api/calculations', (route) => route.request().postDataJSON().expression === '6*7');
+  try {
+    await page.locator('#expression').fill('6*7');
+    await page.locator('#expression').press('Enter');
+    await delayed.received;
+    const current = await calculate(page, '67');
+    expect(current.achievements?.map((award) => award.id)).toContain('six_seven');
+    const ceremony = page.getByRole('complementary', { name: 'Новое достижение', exact: true });
+    await expect(ceremony).toHaveAttribute('data-achievement-id', 'six_seven');
+    await expect(page.locator('#expression')).toBeFocused();
+    const multiple = await calculate(page, 'sqrt(16)/abs(-4)+ln(1)');
+    expect(multiple.achievements?.map((award) => award.id)).toEqual(['scientific_method', 'paper_tiger']);
+    await calculate(page, '3+4');
+    await expect(ceremony).toHaveAttribute('data-achievement-id', 'six_seven');
+    await delayed.deliver();
+    await expect(page.locator('.result-value')).toHaveText('= 7');
+    await expect(page.locator('.result-source code')).toHaveText('3+4');
+    for (const id of ['scientific_method', 'paper_tiger', 'answer_found']) {
+      await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
+      await expect(ceremony).toHaveAttribute('data-achievement-id', id);
+      await expect(page.locator('.result-value')).toHaveText('= 7');
+      await expect(page.locator('#expression')).toHaveValue('3+4');
+    }
+    await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
+    await expect(ceremony).toHaveCount(0);
+    await openCalculator(page);
+    await expect(ceremony).toHaveCount(0);
+    await page.locator('#header-achievements').click();
+    const dialog = page.getByRole('dialog', { name: 'Достижения', exact: true });
+    for (const id of ['answer_found', 'six_seven', 'scientific_method', 'paper_tiger']) {
+      await expect(dialog.locator(`[data-achievement-id="${id}"] time`)).toHaveCount(1);
+    }
+    await page.keyboard.press('Escape');
+    await expect(ceremony).toHaveCount(0);
   } finally {
     delayed.release();
   }
@@ -139,8 +196,11 @@ test('a held or failed collection refresh leaves calculation and history usable'
   const collection = page.locator('#achievement-collection');
   const delayed = await holdReply(page, '**/api/session');
   try {
-    await collection.locator('summary').click();
+    await page.locator('#header-achievements').click();
     await delayed.received;
+    await expect(collection).toBeVisible();
+    await collection.getByRole('button', { name: 'Закрыть достижения' }).click();
+    await expect(page.locator('#header-achievements')).toBeFocused();
     expect((await calculate(page, scientific)).calculation.outcome).toEqual({ kind: 'success', value: '17' });
     await expect(page.locator('.history-item-button').filter({ hasText: scientific }).locator('.history-outcome')).toHaveText('= 17');
     await delayed.deliver();
@@ -148,16 +208,15 @@ test('a held or failed collection refresh leaves calculation and history usable'
     delayed.release();
   }
   await page.unroute('**/api/session');
-  await collection.locator('summary').click();
-  await expect(collection).not.toHaveAttribute('open', '');
   await page.route('**/api/session', (route) => route.abort('failed'));
-  await collection.locator('summary').click();
+  await page.locator('#header-achievements').click();
   await expect(collection.getByRole('button', { name: 'Повторить загрузку', exact: true })).toBeEnabled();
+  await collection.getByRole('button', { name: 'Закрыть достижения' }).click();
   expect((await calculate(page, '8*9')).calculation.outcome).toEqual({ kind: 'success', value: '72' });
   await expect(page.locator('.history-item-button').filter({ hasText: '8*9' }).locator('.history-outcome')).toHaveText('= 72');
   await page.unroute('**/api/session');
   const recovery = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/session');
-  await collection.getByRole('button', { name: 'Повторить загрузку', exact: true }).click();
+  await page.locator('#header-achievements').click();
   expect((await recovery).status()).toBe(200);
   await expect(collection.getByRole('button', { name: 'Повторить загрузку', exact: true })).toHaveCount(0);
 });
@@ -178,8 +237,9 @@ test('adopting a replacement identity automatically loads its history and reject
     await context.addCookies(await replacement.cookies());
     await page.locator('#tool-history').click();
     const adoptedHistory = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/history');
-    await page.locator('#achievement-collection summary').click();
+    await page.locator('#header-achievements').click();
     expect((await adoptedHistory).status()).toBe(200);
+    await page.locator('#achievement-collection').getByRole('button', { name: 'Закрыть достижения' }).click();
     await expect(page.locator('.history-item-button').filter({ hasText: '22*22' }).locator('.history-outcome')).toHaveText('= 484');
     await expect(page.locator('.history-item-button').filter({ hasText: '11*11' })).toHaveCount(0);
     await delayed.deliver();
@@ -215,7 +275,7 @@ test('IME keys do not calculate or close settings; ordinary Escape restores the 
 
 test('tool Escape restores each trigger and scientific insertion preserves the open bay and cursor', async ({ page }) => {
   await openCalculator(page);
-  for (const tool of ['functions', 'keypad', 'history']) {
+  for (const tool of ['functions', 'keypad', 'history', 'statistics']) {
     const trigger = page.locator(`#tool-${tool}`);
     await trigger.click();
     await expect(page.locator('#tool-bay-heading')).toBeFocused();
@@ -238,7 +298,75 @@ test('tool Escape restores each trigger and scientific insertion preserves the o
     if (!(element instanceof HTMLTextAreaElement)) throw new Error('Expected the expression editor');
     return { start: element.selectionStart, end: element.selectionEnd };
   })).toEqual({ start: 7, end: 7 });
+  await page.getByRole('button', { name: 'Запятая', exact: true }).click();
+  await expect(editor).toHaveValue('sqrt(81,)');
+  await expect(editor).toBeFocused();
+  await expect(page.locator('#tool-functions')).toHaveAttribute('aria-expanded', 'true');
+  expect(await editor.evaluate((element) => {
+    if (!(element instanceof HTMLTextAreaElement)) throw new Error('Expected the expression editor');
+    return { start: element.selectionStart, end: element.selectionEnd };
+  })).toEqual({ start: 8, end: 8 });
   expect((await calculate(page, 'sqrt(81)')).calculation.outcome).toEqual({ kind: 'success', value: '9' });
+});
+
+test('statistics loads on opening and separates accepted errors from successes', async ({ page }) => {
+  await openCalculator(page);
+  await calculate(page, '20+3');
+  await calculate(page, '1/0');
+  const delayed = await holdReply(page, '**/api/statistics');
+  try {
+    await page.locator('#tool-statistics').click();
+    await delayed.received;
+    await expect(page.locator('.statistics-panel__loading')).toBeVisible();
+    await expect(page.locator('.statistics-panel summary')).toHaveCount(0);
+    await delayed.deliver();
+    const totals = page.locator('.statistics-panel__totals');
+    await expect(totals.locator('dd')).toHaveText(['2', '1', '1']);
+    await page.locator('.statistics-panel__details summary').click();
+    await expect(page.locator('.statistics-panel__details .statistics-panel__row').filter({ hasText: 'Попытки деления на ноль' }).locator('dd')).toHaveText('1');
+    await expect(page.locator('.statistics-panel__source')).toHaveText('20+3');
+    await expect(page.locator('.statistics-panel__usage code').filter({ hasText: /^\+$/ })).toBeVisible();
+    await page.locator('#tool-history').click();
+    await expect(page.locator('.statistics-panel')).toHaveCount(0);
+    await expect(page.locator('.history-item-button')).toHaveCount(2);
+  } finally {
+    delayed.release();
+  }
+});
+
+test('collection is the topmost dialog and restores its opener without closing the tool bay', async ({ page }) => {
+  await openCalculator(page);
+  await page.locator('#expression').fill('sin(90°)');
+  await page.locator('#tool-functions').click();
+  await page.locator('#header-achievements').click();
+  const dialog = page.getByRole('dialog', { name: 'Достижения', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-achievement-id]')).toHaveCount(22);
+  await expect(dialog.getByRole('button', { name: 'Закрыть достижения' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator('#header-achievements')).toBeFocused();
+  await expect(page.locator('#tool-functions')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#expression')).toHaveValue('sin(90°)');
+});
+
+test('speaker defaults on and persists independently of visual effects', async ({ page }) => {
+  await openCalculator(page);
+  const speaker = page.locator('#sound-toggle');
+  await expect(speaker).toHaveAttribute('aria-pressed', 'true');
+  await speaker.click();
+  await expect(speaker).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#tool-settings').click();
+  const effects = page.getByRole('checkbox', { name: /«Спецэффекты»/ });
+  await effects.uncheck();
+  await speaker.click();
+  await expect(speaker).toHaveAttribute('aria-pressed', 'true');
+  await expect(effects).not.toBeChecked();
+  await speaker.click();
+  await openCalculator(page);
+  await expect(speaker).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#tool-settings').click();
+  await expect(effects).not.toBeChecked();
 });
 
 test('Escape dismisses a real comic scene before the tool panel without blocking the mathematical error', async ({ page }) => {
@@ -262,18 +390,16 @@ test('Escape dismisses a real comic scene before the tool panel without blocking
   expect((await calculate(page, '9+8')).calculation.outcome).toEqual({ kind: 'success', value: '17' });
 });
 
-test('both palettes preserve editor, angle, outcome and history on a phone-sized surface', async ({ page }) => {
+test('both palettes preserve explicit source, outcome and history on a phone-sized surface', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openCalculator(page);
-  await page.locator('#angle-unit').selectOption('rad');
   await calculate(page, scientific);
-  await page.locator('#expression').fill('sin(pi/2)');
+  await page.locator('#expression').fill('sin(90°)');
   for (const [label, theme] of [['Янтарная', 'amber'], ['Фиолетовая', 'violet']] as const) {
     await page.locator('#tool-settings').click();
     await page.getByRole('radio', { name: label, exact: true }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('#expression')).toHaveValue('sin(pi/2)');
-    await expect(page.locator('#angle-unit')).toHaveValue('rad');
+    await expect(page.locator('#expression')).toHaveValue('sin(90°)');
     await expect(page.locator('.result-value')).toHaveText('= 17');
     await page.locator('#tool-bay-heading').press('Escape');
     await expect(page.locator('#tool-settings')).toBeFocused();
@@ -282,8 +408,7 @@ test('both palettes preserve editor, angle, outcome and history on a phone-sized
     await page.locator('#tool-bay-heading').press('Escape');
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const result: CalculationResponse = await calculate(page, 'sin(pi/2)');
-  expect(result.calculation.context.angleUnit).toBe('rad');
+  const result: CalculationResponse = await calculate(page, 'sin(90°)');
   expect(result.calculation.outcome).toEqual({ kind: 'success', value: '1' });
   await expect(page.locator('.result-value')).toBeInViewport();
   await expect(page.locator('#tool-bay')).toHaveCount(0);

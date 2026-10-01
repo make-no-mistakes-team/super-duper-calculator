@@ -47,7 +47,7 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 				t.Fatalf("session status = %d", response.Code)
 			}
 		}
-		body, _ := json.Marshal(contracts.CalculationRequest{RequestID: id, Expression: expression, AngleUnit: contracts.Degrees})
+		body, _ := json.Marshal(contracts.CalculationRequest{RequestID: id, Expression: expression})
 		response := send(person, http.MethodPost, "/api/calculations", body)
 		var result contracts.CalculationResponse
 		if response.Code == http.StatusOK {
@@ -78,7 +78,7 @@ func TestCalculationHistoryAndIdentity(t *testing.T) {
 	if status, result := post(personA, "action-1", "2+3*4"); status != 200 || result.Calculation.Outcome.Value != "14" {
 		t.Fatalf("calculation = %d %+v", status, result)
 	}
-	foreignBody, _ := json.Marshal(contracts.CalculationRequest{RequestID: "foreign", Expression: "1+1", AngleUnit: contracts.Degrees})
+	foreignBody, _ := json.Marshal(contracts.CalculationRequest{RequestID: "foreign", Expression: "1+1"})
 	foreignRequest := httptest.NewRequest(http.MethodPost, "/api/calculations", bytes.NewReader(foreignBody))
 	foreignRequest.Header.Set("Origin", "https://other.example")
 	foreignRequest.AddCookie(personA.cookie)
@@ -140,7 +140,7 @@ func TestRejectCrossSchemeOrigin(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	request := httptest.NewRequest(http.MethodPost, "http://calculator.example/api/calculations",
-		strings.NewReader(`{"requestId":"cross-scheme","expression":"1+1","angleUnit":"deg"}`))
+		strings.NewReader(`{"requestId":"cross-scheme","expression":"1+1"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", "https://calculator.example")
 	response := httptest.NewRecorder()
@@ -158,13 +158,16 @@ func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	handler := newHandler(db, nil, true, false)
 	for _, body := range []string{
-		`{"requestId":"missing","angleUnit":"deg"}`,
-		`{"requestId":"null","expression":null,"angleUnit":"deg"}`,
-		`{"requestId":"number","expression":123,"angleUnit":"deg"}`,
-		`{"requestId":"room","expression":"1","angleUnit":"deg","room":null}`,
-		`{"requestId":"room","expression":"1","angleUnit":"deg","room":{"code":"demo"}}`,
-		`{"requestId":"room","expression":"1","angleUnit":"deg","room":{"code":"demo","publish":"false"}}`,
-		`{"requestId":"extra","expression":"1","angleUnit":"deg"} {}`,
+		`{"requestId":"missing"}`,
+		`{"requestId":"null","expression":null}`,
+		`{"requestId":"number","expression":123}`,
+		`{"expression":"1"}`,
+		`{"requestId":null,"expression":"1"}`,
+		`{"requestId":"","expression":"1"}`,
+		`{"requestId":"room","expression":"1","room":null}`,
+		`{"requestId":"room","expression":"1","room":{"code":"demo"}}`,
+		`{"requestId":"room","expression":"1","room":{"code":"demo","publish":"false"}}`,
+		`{"requestId":"extra","expression":"1"} {}`,
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
@@ -175,7 +178,7 @@ func TestMalformedRequestsDoNotCreateHistory(t *testing.T) {
 		}
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/calculations",
-		strings.NewReader(`{"requestId":"plain","expression":"1+1","angleUnit":"deg"}`))
+		strings.NewReader(`{"requestId":"plain","expression":"1+1"}`))
 	request.Header.Set("Content-Type", "text/plain")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -194,7 +197,7 @@ func TestEscapedExpressionWithinBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	body := `{"requestId":"escaped","expression":"` + strings.Repeat(`\u0020`, 1023) + `1","angleUnit":"deg"}`
+	body := `{"requestId":"escaped","expression":"` + strings.Repeat(`\u0020`, 1023) + `1"}`
 	request := httptest.NewRequest(http.MethodPost, "/api/calculations", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()

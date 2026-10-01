@@ -4,8 +4,7 @@
     "requestId": "example-action-error",
     "expression": "5*(",
     "context": {
-      "angleUnit": "deg",
-      "semanticsVersion": "binary64-v1"
+      "semanticsVersion": "binary64-v2"
     },
     "outcome": {
       "kind": "error",
