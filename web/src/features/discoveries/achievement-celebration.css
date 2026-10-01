@@ -22,6 +22,7 @@
   border-radius: 16px;
   background: var(--page-background);
   pointer-events: none;
+  transform-origin: 100% 100%;
 }
 
 .achievement-ceremony__artwork {
@@ -30,6 +31,7 @@
   height: 128px;
   object-fit: contain;
   image-rendering: pixelated;
+  transform-origin: 50% 88%;
 }
 
 .achievement-ceremony__copy {
@@ -93,6 +95,10 @@
   outline-offset: 3px;
 }
 
+.achievement-ceremony button:active {
+  transform: translateY(2px) scale(.94, .88);
+}
+
 .achievement-ceremony__close {
   display: grid;
   align-self: start;
@@ -142,7 +148,12 @@
 }
 
 .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony {
-  animation: achievement-signal 1.25s steps(6, end) both;
+  animation: achievement-signal 1.25s steps(6, end) both,
+    achievement-ceremony-unpack 480ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__artwork {
+  animation: achievement-trophy-arrive 600ms ease-out both;
 }
 
 .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__wave {
@@ -151,6 +162,54 @@
 
 .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__sparks i {
   animation: achievement-pixel-firework 1s steps(8, end) var(--spark-delay) both;
+}
+
+/* Applied only to an inert painted snapshot by ceremony finish. Keeping the
+   live award mounted until this ends would delay its successor and focus. */
+.achievement-ceremony-stage.achievement-ceremony-stage--exiting .achievement-ceremony {
+  animation: achievement-ceremony-retract 190ms cubic-bezier(.55, 0, .8, .4) both;
+}
+
+.achievement-ceremony-stage.achievement-ceremony-stage--exiting .achievement-ceremony__artwork {
+  animation: achievement-trophy-retract 150ms ease-in both;
+}
+
+.achievement-ceremony-stage--exiting,
+.achievement-ceremony-stage--exiting *,
+.achievement-ceremony-stage--exiting button {
+  pointer-events: none;
+}
+
+.achievement-ceremony-stage--exiting .achievement-ceremony__spectacle {
+  display: none;
+}
+
+@keyframes achievement-ceremony-unpack {
+  0% { clip-path: inset(100% 0 0 60% round 8px); transform: translateY(24px) scale(1.08, .55); opacity: .65; }
+  52% { clip-path: inset(0 round 16px); transform: translateY(-7px) scale(.98, 1.035); opacity: 1; }
+  76% { transform: translateY(2px) scale(1.012, .98); }
+  100% { clip-path: inset(0 round 16px); transform: none; opacity: 1; }
+}
+
+@keyframes achievement-trophy-arrive {
+  0% { transform: translateY(28px) scale(1.4, .35); opacity: 0; }
+  28% { transform: translateY(-18px) scale(.72, 1.3); opacity: 1; }
+  48% { transform: translateY(5px) scale(1.2, .78) rotate(-5deg); }
+  67% { transform: translateY(-5px) scale(.92, 1.12) rotate(4deg); }
+  84% { transform: translateY(2px) scale(1.055, .95) rotate(-2deg); }
+  100% { transform: none; opacity: 1; }
+}
+
+@keyframes achievement-ceremony-retract {
+  0% { clip-path: inset(0 round 16px); transform: none; opacity: 1; }
+  35% { clip-path: inset(0 round 16px); transform: translateY(-3px) scale(1.03, .92); opacity: 1; }
+  100% { clip-path: inset(100% 0 0 60% round 8px); transform: translateY(22px) scale(.86, .45); opacity: 0; }
+}
+
+@keyframes achievement-trophy-retract {
+  0% { transform: none; }
+  40% { transform: translateY(5px) scale(1.25, .62); }
+  100% { transform: translateY(24px) scale(.42, .18); opacity: 0; }
 }
 
 @keyframes achievement-signal {
@@ -249,6 +308,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony,
+  .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__artwork,
+  .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__wave,
+  .achievement-ceremony-stage--effects.achievement-ceremony-stage--burst .achievement-ceremony__sparks i,
   .achievement-ceremony-stage .achievement-ceremony,
   .achievement-ceremony-stage .achievement-ceremony__artwork,
   .achievement-ceremony-stage .achievement-ceremony__wave,
@@ -258,5 +321,13 @@
 
   .achievement-ceremony__spectacle {
     display: none;
+  }
+
+  .achievement-ceremony-stage--exiting {
+    display: none;
+  }
+
+  .achievement-ceremony button:active {
+    transform: none;
   }
 }

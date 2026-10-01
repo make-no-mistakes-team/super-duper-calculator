@@ -1,0 +1,239 @@
+.calculator-personality {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  color: var(--accent);
+  font-family: var(--body);
+}
+
+.calculator-personality__face {
+  position: fixed;
+  width: 48px;
+  height: 36px;
+  pointer-events: none;
+  background: var(--surface);
+}
+
+.calculator-personality__pixels {
+  display: block;
+  width: 48px;
+  height: 36px;
+  overflow: visible;
+  image-rendering: pixelated;
+  transform-origin: 50% 75%;
+}
+
+.calculator-personality__energy { opacity: 0; }
+.calculator-personality__eye-lids {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/* Separate clocks keep the quiet idle face from repeating one short routine. */
+.calculator-personality[data-minimal='false'] .calculator-personality__pixels[data-mood='idle'] {
+  animation: personality-idle-hover 6.4s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+.calculator-personality[data-minimal='false'] .calculator-personality__pixels[data-mood='idle'] .calculator-personality__eyes {
+  animation: personality-idle-glance 19.1s steps(1, end) infinite;
+}
+.calculator-personality[data-minimal='false'] .calculator-personality__pixels[data-mood='idle'] .calculator-personality__eye-lids {
+  animation: personality-idle-blink 17.3s steps(1, end) infinite;
+}
+.calculator-personality__pixels[data-mood='loading'] .calculator-personality__eyes {
+  animation: personality-working-eyes 700ms steps(2, end) infinite;
+}
+.calculator-personality__pixels[data-mood='loading'] .calculator-personality__face-frame {
+  animation: personality-working-frame 700ms steps(2, end) infinite;
+}
+.calculator-personality__pixels[data-mood='success'] {
+  animation: personality-face-success 900ms both;
+}
+.calculator-personality__pixels[data-mood='recovery'] {
+  animation: personality-face-recovery 1000ms both;
+}
+.calculator-personality__pixels[data-mood='error'] {
+  color: var(--error);
+  animation: personality-face-error 600ms both;
+}
+.calculator-personality__pixels[data-mood='success'] .calculator-personality__energy,
+.calculator-personality__pixels[data-mood='recovery'] .calculator-personality__energy {
+  animation: personality-energy 700ms steps(1, end) both;
+}
+
+.calculator-personality__bubble {
+  position: fixed;
+  width: max-content;
+  max-width: min(288px, calc(100vw - 44px));
+  padding: 13px 17px 14px;
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: 0 7px 18px rgb(0 0 0 / .24);
+  pointer-events: none;
+  contain: layout;
+  --speech-x: 0px;
+  --speech-y: 16px;
+  --speech-squash-x: 1.16;
+  --speech-squash-y: .18;
+  transform-origin: 50% 100%;
+}
+.calculator-personality__bubble p {
+  margin: 0;
+  max-width: 31ch;
+  color: inherit;
+  font: 600 .9375rem/1.4 var(--body);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.calculator-personality__bubble[data-edge='bottom'] {
+  --speech-y: -16px;
+  transform-origin: 50% 0%;
+}
+.calculator-personality__bubble[data-edge='left'] {
+  --speech-x: 16px;
+  --speech-y: 0px;
+  --speech-squash-x: .18;
+  --speech-squash-y: 1.16;
+  transform-origin: 100% 50%;
+}
+.calculator-personality__bubble[data-edge='right'] {
+  --speech-x: -16px;
+  --speech-y: 0px;
+  --speech-squash-x: .18;
+  --speech-squash-y: 1.16;
+  transform-origin: 0% 50%;
+}
+.calculator-personality__bubble[data-phase='measuring'] { visibility: hidden; }
+.calculator-personality__bubble[data-phase='entering'] {
+  animation: personality-edge-emergence 620ms both;
+}
+.calculator-personality__bubble[data-phase='leaving'] {
+  animation: personality-edge-retraction 220ms ease-in both;
+}
+
+.calculator-personality__tail {
+  position: fixed;
+  background: var(--accent);
+  pointer-events: none;
+  clip-path: polygon(0 0, 100% 0, 100% 32%, 75% 32%, 75% 66%, 58% 66%, 58% 100%, 42% 100%, 42% 66%, 25% 66%, 25% 32%, 0 32%);
+  transform-origin: 50% 100%;
+}
+.calculator-personality__tail[data-edge='bottom'] {
+  clip-path: polygon(42% 0, 58% 0, 58% 34%, 75% 34%, 75% 68%, 100% 68%, 100% 100%, 0 100%, 0 68%, 25% 68%, 25% 34%, 42% 34%);
+  transform-origin: 50% 0%;
+}
+.calculator-personality__tail[data-edge='left'] {
+  clip-path: polygon(0 0, 32% 0, 32% 25%, 66% 25%, 66% 42%, 100% 42%, 100% 58%, 66% 58%, 66% 75%, 32% 75%, 32% 100%, 0 100%);
+  transform-origin: 100% 50%;
+}
+.calculator-personality__tail[data-edge='right'] {
+  clip-path: polygon(0 42%, 34% 42%, 34% 25%, 68% 25%, 68% 0, 100% 0, 100% 100%, 68% 100%, 68% 75%, 34% 75%, 34% 58%, 0 58%);
+  transform-origin: 0% 50%;
+}
+.calculator-personality__tail[data-phase='entering'] { animation: personality-tail-attach 240ms ease-out both; }
+.calculator-personality__tail[data-phase='leaving'] { animation: personality-tail-retract 220ms ease-in both; }
+
+@keyframes personality-edge-emergence {
+  0% { opacity: 0; transform: translate(var(--speech-x), var(--speech-y)) scale(var(--speech-squash-x), var(--speech-squash-y)); }
+  18% { opacity: 1; transform: translate(calc(var(--speech-x) * .3), calc(var(--speech-y) * .3)) scale(.84, 1.12); }
+  42% { transform: translate(calc(var(--speech-x) * -.2), calc(var(--speech-y) * -.2)) scale(1.05, .94); }
+  66% { transform: translate(0, 0) scale(.985, 1.025); }
+  84% { transform: translate(0, 0) scale(1.01, .99); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1, 1); }
+}
+@keyframes personality-edge-retraction {
+  0% { opacity: 1; transform: scale(1, 1); }
+  24% { opacity: 1; transform: scale(1.025, .95); }
+  100% { opacity: 0; transform: translate(var(--speech-x), var(--speech-y)) scale(var(--speech-squash-x), var(--speech-squash-y)); }
+}
+@keyframes personality-tail-attach {
+  0% { opacity: 0; transform: scale(.1); }
+  55% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes personality-tail-retract {
+  0%, 30% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.05); }
+}
+@keyframes personality-idle-hover {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  38%, 48% { transform: translateY(-3px) rotate(-1.5deg); }
+  74% { transform: translateY(-1px) rotate(.8deg); }
+}
+@keyframes personality-idle-glance {
+  0%, 66%, 73%, 100% { transform: translate(0, 0); }
+  67%, 72% { transform: translate(1px, 1px); }
+}
+@keyframes personality-idle-blink {
+  0%, 25%, 52%, 83%, 85%, 100% { transform: scaleY(1); }
+  24%, 51%, 82%, 84% { transform: scaleY(.333333); }
+}
+@keyframes personality-face-success {
+  0% { transform: scale(1); }
+  16% { transform: translateY(2px) scale(1.15, .78); }
+  36% { transform: translateY(-5px) scale(.85, 1.12); }
+  58% { transform: translateY(1px) scale(1.08, .93); }
+  78% { transform: translateY(-1px) scale(.98, 1.02); }
+  100% { transform: none; }
+}
+@keyframes personality-face-recovery {
+  0% { transform: rotate(-7deg) scale(.88, 1.08); }
+  20% { transform: translateY(2px) rotate(5deg) scale(1.15, .8); }
+  42% { transform: translateY(-6px) rotate(-4deg) scale(.86, 1.13); }
+  63% { transform: translateY(1px) rotate(2deg) scale(1.08, .94); }
+  100% { transform: none; }
+}
+@keyframes personality-face-error {
+  0%, 100% { transform: none; }
+  15%, 45% { transform: translateX(-3px); }
+  30%, 60% { transform: translateX(3px) scale(1.06, .95); }
+  80% { transform: translateX(-1px); }
+}
+@keyframes personality-working-eyes {
+  0%, 100% { transform: translateX(-1px); }
+  50% { transform: translateX(1px); }
+}
+@keyframes personality-working-frame {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+@keyframes personality-energy {
+  0%, 30%, 70%, 100% { opacity: 0; }
+  15%, 45% { opacity: 1; }
+}
+@keyframes personality-simple-feedback {
+  from { opacity: .65; }
+  to { opacity: 1; }
+}
+@keyframes personality-simple-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.calculator-personality[data-minimal='true'] .calculator-personality__bubble[data-phase='entering'],
+.calculator-personality[data-minimal='true'] .calculator-personality__tail[data-phase='entering'] {
+  animation: personality-simple-feedback 120ms ease-out both;
+}
+.calculator-personality[data-minimal='true'] .calculator-personality__bubble[data-phase='leaving'],
+.calculator-personality[data-minimal='true'] .calculator-personality__tail[data-phase='leaving'] {
+  animation: personality-simple-exit 100ms ease-out both;
+}
+.calculator-personality[data-minimal='true'] .calculator-personality__pixels,
+.calculator-personality[data-minimal='true'] .calculator-personality__eyes,
+.calculator-personality[data-minimal='true'] .calculator-personality__eye-lids,
+.calculator-personality[data-minimal='true'] .calculator-personality__face-frame {
+  animation: none;
+}
+.calculator-personality[data-minimal='true'] .calculator-personality__energy { animation: none; opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .calculator-personality .calculator-personality__bubble[data-phase='entering'],
+  .calculator-personality .calculator-personality__tail[data-phase='entering'] { animation: personality-simple-feedback 120ms ease-out both; }
+  .calculator-personality .calculator-personality__bubble[data-phase='leaving'],
+  .calculator-personality .calculator-personality__tail[data-phase='leaving'] { animation: personality-simple-exit 100ms ease-out both; }
+  .calculator-personality[data-minimal] .calculator-personality__pixels[data-mood],
+  .calculator-personality[data-minimal] .calculator-personality__pixels[data-mood] .calculator-personality__eyes,
+  .calculator-personality[data-minimal] .calculator-personality__pixels[data-mood] .calculator-personality__eye-lids,
+  .calculator-personality[data-minimal] .calculator-personality__pixels[data-mood] .calculator-personality__face-frame,
+  .calculator-personality[data-minimal] .calculator-personality__pixels[data-mood] .calculator-personality__energy { animation: none; }
+}

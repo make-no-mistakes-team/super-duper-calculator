@@ -165,7 +165,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireLegacyRecord(t, db)
-	requireSchemaVersion(t, db, 5)
+	requireSchemaVersion(t, db, 6)
 	if _, err := db.ExecContext(t.Context(), "INSERT INTO sessions (id, expires_at) VALUES (?, ?)", "session-1", 100); err != nil {
 		t.Fatalf("core schema not initialized: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestOpenMigratesPopulatedVersionZeroAndReopens(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	requireLegacyRecord(t, reopened)
-	requireSchemaVersion(t, reopened, 5)
+	requireSchemaVersion(t, reopened, 6)
 	var sessions int
 	if err := reopened.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sessions WHERE id = ?", "session-1").Scan(&sessions); err != nil {
 		t.Fatal(err)
@@ -393,7 +393,7 @@ func TestOpenExpressionAngleMigrationPreservesHistoryAndProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	requireSchemaVersion(t, upgraded, 5)
+	requireSchemaVersion(t, upgraded, 6)
 	var obsoleteColumns, foreignKeys, expiry, highWatermark int64
 	if err := upgraded.QueryRowContext(t.Context(),
 		"SELECT COUNT(*) FROM pragma_table_info('calculations') WHERE name = 'angle_unit'").Scan(&obsoleteColumns); err != nil || obsoleteColumns != 0 {
@@ -465,8 +465,8 @@ func TestOpenExpressionAngleMigrationPreservesHistoryAndProgress(t *testing.T) {
 		t.Fatalf("saved effect cooldown changed: %q, %d, %v", effectSource, sceneTime, err)
 	}
 	progress, err := storage.ReadDiscoveryProgress(t.Context(), upgraded, "owner")
-	if err != nil || progress != (storage.DiscoveryProgress{LastSequence: 19, AcceptedCount: 2}) {
-		t.Fatalf("discovery checkpoint changed: %+v, %v", progress, err)
+	if err != nil || progress != (storage.DiscoveryProgress{}) {
+		t.Fatalf("development checkpoint was not reset for quiet reconciliation: %+v, %v", progress, err)
 	}
 	violations, err := upgraded.QueryContext(t.Context(), "PRAGMA foreign_key_check")
 	if err != nil {
@@ -585,7 +585,7 @@ func TestOpenDiscoveryProgressMigrationPreservesHistoryAndAwards(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
-	requireSchemaVersion(t, upgraded, 5)
+	requireSchemaVersion(t, upgraded, 6)
 	var source, expression string
 	if err := upgraded.QueryRowContext(t.Context(), `
 		SELECT a.calculation_id, c.expression FROM achievements a

@@ -17,18 +17,88 @@
 .achievement-collection[open] {
   display: flex;
   flex-direction: column;
-  animation: achievement-window-unmask 300ms cubic-bezier(.16, 1, .3, 1) both;
+  transform-origin: 50% 56px;
+  animation: achievement-window-unmask 280ms cubic-bezier(.16, 1, .3, 1) both;
 }
 
 .achievement-collection::backdrop {
   background: rgb(3 4 7 / .82);
-  animation: achievement-backdrop-reveal 300ms ease-out both;
+  animation: achievement-backdrop-reveal 180ms ease-out both;
+}
+
+/* The real dialog is already closed: this last painted frame has no focus,
+   accessibility, backdrop or hit targets and never holds up another award. */
+.achievement-collection--closing {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  max-height: none;
+  margin: 0;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: 50% 56px;
+  animation: achievement-window-fold 190ms cubic-bezier(.55, 0, .8, .4) both;
+}
+
+.achievement-collection--closing *,
+.achievement-collection--closing button {
+  pointer-events: none;
+}
+
+.achievement-collection--closing .achievement-collection__artwork {
+  animation: achievement-collection-icon-store 150ms ease-in both;
+}
+
+.achievement-collection[open][data-effects='on'] .achievement-collection__item {
+  animation: achievement-collection-card-unpack 210ms cubic-bezier(.16, 1, .3, 1) var(--award-arrival-delay, 0ms) both;
+}
+
+.achievement-collection[open][data-effects='on'] .achievement-collection__artwork {
+  transform-origin: 50% 88%;
+  animation: achievement-collection-icon-pop 200ms ease-out var(--award-arrival-delay, 0ms) both;
+}
+
+.achievement-collection[open][data-effects='off'],
+.achievement-collection[data-effects='off']::backdrop {
+  animation: none;
 }
 
 /* Keep the final geometry and immediately operable header throughout opening. */
 @keyframes achievement-window-unmask {
-  from { clip-path: inset(0 0 calc(100% - 112px) 0 round 16px); opacity: .65; }
-  to { clip-path: inset(0 round 16px); opacity: 1; }
+  0% { clip-path: inset(0 0 calc(100% - 112px) 0 round 16px); transform: scale(.96, .86); opacity: .7; }
+  58% { clip-path: inset(0 round 16px); transform: scale(1.012, .985); opacity: 1; }
+  80% { transform: scale(.995, 1.012); }
+  100% { clip-path: inset(0 round 16px); transform: none; opacity: 1; }
+}
+
+@keyframes achievement-window-fold {
+  0% {
+    clip-path: var(--exit-snapshot-clip, inset(0 round 16px));
+    transform: var(--exit-snapshot-transform, none);
+    opacity: var(--exit-snapshot-opacity, 1);
+  }
+  60% { clip-path: inset(0 0 calc(100% - 112px) 0 round 16px); transform: scale(1.025, .92); opacity: .9; }
+  100% { clip-path: inset(0 48% 100% 48% round 4px); transform: scale(.82, .72); opacity: 0; }
+}
+
+@keyframes achievement-collection-card-unpack {
+  0% { clip-path: inset(0 0 100% 0 round 12px); transform: translateY(-12px) scaleY(.88); opacity: .5; }
+  68% { clip-path: inset(0 round 12px); transform: translateY(2px) scaleY(1.025); opacity: 1; }
+  100% { clip-path: inset(0 round 12px); transform: none; opacity: 1; }
+}
+
+@keyframes achievement-collection-icon-pop {
+  0% { transform: translateY(10px) scale(1.28, .48); }
+  42% { transform: translateY(-9px) scale(.8, 1.22); }
+  72% { transform: translateY(2px) scale(1.1, .9); }
+  100% { transform: none; }
+}
+
+@keyframes achievement-collection-icon-store {
+  0% { transform: none; opacity: 1; }
+  45% { transform: translateY(4px) scale(1.18, .72); opacity: .8; }
+  100% { transform: translateY(16px) scale(.55, .22); opacity: 0; }
 }
 
 @keyframes achievement-backdrop-reveal {
@@ -90,6 +160,10 @@
   outline-offset: 3px;
 }
 
+.achievement-collection button:active {
+  transform: translateY(2px) scale(.94, .9);
+}
+
 .achievement-collection__body {
   min-height: 0;
   padding: 24px 28px 28px;
@@ -108,20 +182,30 @@
 }
 
 .achievement-collection__item {
+  --award-card-background: var(--page-background);
+  --award-card-border: color-mix(in srgb, var(--line) 65%, var(--page-background));
+  --award-card-copy: var(--muted);
   display: flex;
   align-items: start;
   gap: 16px;
   min-width: 0;
   padding: 20px;
-  border: 2px solid var(--line);
-  border-top-color: var(--frame-top);
+  border: 2px dashed var(--award-card-border);
   border-radius: 12px;
-  background: var(--surface);
+  background: var(--award-card-background);
   scroll-margin-block: 20px;
 }
 
 .achievement-collection__item--earned {
-  border-color: color-mix(in srgb, var(--award-accent) 60%, var(--line));
+  --award-card-background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--award-accent) 24%, var(--surface)),
+    color-mix(in srgb, var(--award-accent) 12%, var(--surface))
+  );
+  --award-card-border: color-mix(in srgb, var(--award-accent) 85%, var(--surface));
+  --award-card-copy: color-mix(in srgb, var(--foreground) 75%, var(--award-accent));
+  border-style: solid;
+  border-top-color: var(--award-accent);
 }
 
 .achievement-collection__item--selected {
@@ -135,7 +219,7 @@
   height: 64px;
   object-fit: contain;
   image-rendering: pixelated;
-  filter: grayscale(1) brightness(.85);
+  filter: grayscale(1) brightness(.55);
 }
 
 .achievement-collection__item--earned .achievement-collection__artwork {
@@ -154,7 +238,7 @@
 }
 
 .achievement-collection__state {
-  color: var(--muted);
+  color: var(--award-card-copy);
   font: 400 1.125rem/1.5 var(--achievements);
 }
 
@@ -165,7 +249,7 @@
 .achievement-collection__description,
 .achievement-collection__concealed {
   margin: 12px 0 0;
-  color: var(--muted);
+  color: var(--award-card-copy);
   font: 400 1.125rem/1.55 var(--achievements);
   overflow-wrap: anywhere;
 }
@@ -180,7 +264,7 @@
 .achievement-collection__date {
   display: block;
   margin-top: 12px;
-  color: var(--muted);
+  color: var(--award-card-copy);
   font: 400 1.125rem/1.55 var(--achievements);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -247,7 +331,17 @@
 
 @media (prefers-reduced-motion: reduce) {
   .achievement-collection[open],
-  .achievement-collection::backdrop {
+  .achievement-collection::backdrop,
+  .achievement-collection[open][data-effects] .achievement-collection__item,
+  .achievement-collection[open][data-effects] .achievement-collection__artwork {
     animation: none;
+  }
+
+  .achievement-collection--closing {
+    display: none;
+  }
+
+  .achievement-collection button:active {
+    transform: none;
   }
 }

@@ -4,6 +4,11 @@ package discovery
 
 import (
 	"fmt"
+	"math"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/make-no-mistakes-team/super-duper-calculator/contracts"
 )
@@ -17,6 +22,20 @@ const (
 	bracketArchitect
 	scientificMethod
 	touchGrass
+	secondWind
+	alternateRoutes
+	quietAfterStorm
+	paperTiger
+	gainingAltitude
+	mirrorRoom
+	troubleCollector
+	unscathed
+	grandScale
+	lastPixel
+	parallelWorlds
+	timeLoop
+	fourthWall
+	unexpectedTail
 )
 
 // Text is the authored copy for one locale.
@@ -75,6 +94,76 @@ var catalog = [...]Definition{
 		RU: Text{"Снаружи тоже жизнь", "Провести 25 вычислений; вычисления с математическими ошибками тоже считаются.", "Может, пора выйти погулять?"},
 		EN: Text{"Life Outside", "Make 25 calculations; mathematical errors count too.", "Maybe take a walk?"},
 	},
+	secondWind: {
+		ID: "second_wind",
+		RU: Text{"Второе дыхание", "После математической ошибки успешно выполнить следующее вычисление.", "Ошибка осталась позади. Продолжаем."},
+		EN: Text{"Second Wind", "Succeed on the next calculation after a mathematical error.", "The error is behind us. Carry on."},
+	},
+	alternateRoutes: {
+		ID: "alternate_routes",
+		RU: Text{"Другой маршрут", "Получить один и тот же точный результат в трёх выражениях с разной структурой операций или функций.", "Три маршрута. Одна точка назначения."},
+		EN: Text{"Another Route", "Reach the same exact result through three different operator or function structures.", "Three routes. One destination."},
+	},
+	quietAfterStorm: {
+		ID: "quiet_after_storm", Secret: true,
+		RU: Text{"Тишина после бури", "Получить точный ноль в выражении с восемью или более операциями.", "Столько движения — и полная тишина."},
+		EN: Text{"Quiet After the Storm", "Get exact zero from an expression with at least eight operations.", "All that motion, then complete silence."},
+	},
+	paperTiger: {
+		ID: "paper_tiger", Secret: true,
+		RU: Text{"Бумажный тигр", "Получить точную единицу, применив не менее трёх разных научных функций.", "Выглядело грозно. Оказалось единицей."},
+		EN: Text{"Paper Tiger", "Get exact one using at least three different scientific functions.", "Looked fierce. Turned out to be one."},
+	},
+	gainingAltitude: {
+		ID: "gaining_altitude",
+		RU: Text{"Набираем высоту", "Выполнить пять успешных вычислений подряд; каждый следующий результат должен быть строго больше предыдущего.", "Каждый ответ — ступенькой выше."},
+		EN: Text{"Gaining Altitude", "Get five consecutive successful results, each strictly greater than the last.", "Every answer is another step up."},
+	},
+	mirrorRoom: {
+		ID: "mirror_room", Secret: true,
+		RU: Text{"Зеркальная комната", "В трёх успешных вычислениях подряд получить ненулевое число, противоположное ему число и снова исходное.", "Отражение есть. Выход тоже найдётся."},
+		EN: Text{"Mirror Room", "In three consecutive successes, get a nonzero number, its negation, then the original number.", "There's a reflection. We'll find the exit."},
+	},
+	troubleCollector: {
+		ID: "trouble_collector",
+		RU: Text{"Коллекционер неприятностей", "Встретить синтаксическую ошибку, деление на ноль и ошибку области определения.", "Три вида неприятностей. Коллекция завершена."},
+		EN: Text{"Trouble Collector", "Encounter a syntax error, division by zero, and a domain error.", "Three kinds of trouble. Collection complete."},
+	},
+	unscathed: {
+		ID: "unscathed",
+		RU: Text{"Без единой царапины", "Успешно выполнить десять вычислений подряд без математических ошибок.", "Десять ответов. Ни одной царапины."},
+		EN: Text{"Unscathed", "Complete ten consecutive calculations without a mathematical error.", "Ten answers. Not a scratch."},
+	},
+	grandScale: {
+		ID: "grand_scale",
+		RU: Text{"Большой размах", "Получить успешный результат, модуль которого строго больше 10¹².", "Этому числу тесно на обычной линейке."},
+		EN: Text{"Grand Scale", "Get a successful result with absolute value strictly above 10¹².", "An ordinary ruler won't hold this one."},
+	},
+	lastPixel: {
+		ID: "last_pixel",
+		RU: Text{"Последний пиксель", "Получить ненулевой результат, модуль которого строго меньше 10⁻¹².", "Почти ничего. Но всё-таки не ноль."},
+		EN: Text{"The Last Pixel", "Get a nonzero result with absolute value strictly below 10⁻¹².", "Almost nothing. Still not zero."},
+	},
+	parallelWorlds: {
+		ID: "parallel_worlds", Secret: true,
+		RU: Text{"Параллельные миры", "Получить один точный результат тригонометрических вычислений с оператором ° и без него.", "Градусы и радианы встретились в одном ответе."},
+		EN: Text{"Parallel Worlds", "Get the same exact trigonometric result with and without the ° operator.", "Degrees and radians met at the same answer."},
+	},
+	timeLoop: {
+		ID: "time_loop",
+		RU: Text{"Петля времени", "Повторить успешное выражение не раньше чем через семь дней; пробелы, регистр и лишние скобки не важны.", "Прошла неделя. Выражение вернулось."},
+		EN: Text{"Time Loop", "Repeat a successful expression at least seven days later; spacing, case, and redundant parentheses don't matter.", "A week passed. The expression came back."},
+	},
+	fourthWall: {
+		ID: "fourth_wall", Secret: true,
+		RU: Text{"Четвёртая стена", "Отправить отдельное слово «привет» или «hello»; математическая ошибка сохранится.", "Привет! Считать это я всё ещё не умею."},
+		EN: Text{"The Fourth Wall", "Submit only “привет” or “hello”; the mathematical error is still saved.", "Hello! I still can't calculate that."},
+	},
+	unexpectedTail: {
+		ID: "unexpected_tail", Secret: true,
+		RU: Text{"Незваный хвост", "Выполнить хотя бы одну операцию и получить точный результат 0.30000000000000004.", "Хвост не приглашали. Он пришёл сам."},
+		EN: Text{"An Unexpected Tail", "Perform at least one operation and get exactly 0.30000000000000004.", "Nobody invited the tail. It came anyway."},
+	},
 }
 
 // Catalog returns all authored discoveries, independent of configuration.
@@ -105,7 +194,7 @@ type Config struct {
 	Enabled             []string
 }
 
-// DefaultConfig selects all eight discoveries with their initial thresholds.
+// DefaultConfig selects all discoveries with their initial thresholds.
 func DefaultConfig() Config {
 	config := Config{
 		PeerReviewCount:     3,
@@ -120,13 +209,13 @@ func DefaultConfig() Config {
 	return config
 }
 
-// Input is a snapshot of one accepted calculation and its owner's accepted
-// actions immediately before it, newest first. The caller excludes retries,
-// rejected requests and reads, and includes the current action in AcceptedCount.
+// Input supplies one accepted action, prior durable state and indexed evidence.
+// The caller excludes retries/rejections and includes this action in AcceptedCount.
 type Input struct {
 	Calculation   contracts.CalculationRecord
 	AcceptedCount int64
-	Previous      []contracts.CalculationRecord
+	State         *State
+	Evidence      Evidence
 }
 
 // Rules is an immutable selection of discoveries and thresholds.
@@ -202,7 +291,11 @@ func (r Rules) Match(input Input) []string {
 				matches = append(matches, catalog[resultFound].ID)
 			}
 		}
-		if r.enabled[peerReview] && r.matchesPeerReview(&input) {
+		peer := r.peerReviewCount == 1
+		if input.State != nil {
+			peer = peer || current.Expression == input.State.PeerExpression && input.State.PeerStreak+1 >= r.peerReviewCount
+		}
+		if r.enabled[peerReview] && peer {
 			matches = append(matches, catalog[peerReview].ID)
 		}
 		if r.enabled[bracketArchitect] && current.Facts != nil && current.Facts.Depth >= r.bracketDepth {
@@ -215,49 +308,49 @@ func (r Rules) Match(input Input) []string {
 	if r.enabled[touchGrass] && input.AcceptedCount >= r.touchGrassCount {
 		matches = append(matches, catalog[touchGrass].ID)
 	}
-	return matches
-}
-
-func (r Rules) matchesPeerReview(input *Input) bool {
-	current := &input.Calculation
-	if current.RequestID == "" || len(input.Previous) < r.peerReviewCount-1 {
-		return false
+	state := State{}
+	if input.State != nil {
+		state = *input.State
 	}
-	// A retry of the current action is not a new deliberate calculation,
-	// even when older entries already supply the requested streak length.
-	for i := range input.Previous {
-		if input.Previous[i].RequestID == current.RequestID {
-			return false
-		}
-	}
-	count := 1
-	if count >= r.peerReviewCount {
-		return true
-	}
-	for i := range input.Previous {
-		previous := &input.Previous[i]
-		if previous.Outcome.Kind != contracts.OutcomeSuccess || previous.Expression != current.Expression ||
-			previous.RequestID == "" {
-			return false
-		}
-		// An accidentally repeated action in a supplied window is not a new
-		// deliberate calculation. Look farther back for the next distinct one.
-		duplicate := false
-		for j := range i {
-			if input.Previous[j].RequestID == previous.RequestID {
-				duplicate = true
-				break
+	success := current.Outcome.Kind == contracts.OutcomeSuccess
+	value, numeric := numericValue(current.Outcome)
+	facts := current.Facts
+	eligible := [len(catalog)]bool{}
+	eligible[secondWind] = success && state.LastWasError
+	if success {
+		if facts != nil {
+			route := facts.StructureIdentity
+			count := len(input.Evidence.Routes)
+			if route != "" && !slices.Contains(input.Evidence.Routes, route) {
+				count++
 			}
+			eligible[alternateRoutes] = route != "" && count >= 3
+			eligible[quietAfterStorm] = current.Outcome.Value == "0" && facts.OperationCount >= 8
+			eligible[paperTiger] = current.Outcome.Value == "1" && hasScientificFunctions(facts, 3)
+			eligible[unexpectedTail] = current.Outcome.Value == "0.30000000000000004" && facts.OperationCount > 0
+			trig := TrigVariant(facts)
+			eligible[parallelWorlds] = trig != 0 && input.Evidence.Trig|trig == 3
+			eligible[timeLoop] = facts.NormalizedExpression != "" && !input.Evidence.Earliest.IsZero() &&
+				current.CreatedAt.Sub(input.Evidence.Earliest) >= 7*24*time.Hour
 		}
-		if duplicate {
-			continue
-		}
-		count++
-		if count >= r.peerReviewCount {
-			return true
+		last, lastErr := strconv.ParseFloat(state.LastValue, 64)
+		previous, prevErr := strconv.ParseFloat(state.PreviousValue, 64)
+		eligible[gainingAltitude] = numeric && lastErr == nil && value > last && state.IncreasingStreak >= 4
+		eligible[mirrorRoom] = numeric && value != 0 && state.SuccessStreak >= 2 &&
+			lastErr == nil && prevErr == nil && value == previous && value == -last
+		eligible[unscathed] = state.SuccessStreak >= 9
+		eligible[grandScale] = numeric && math.Abs(value) > 1e12
+		eligible[lastPixel] = numeric && math.Abs(value) > 0 && math.Abs(value) < 1e-12
+	}
+	eligible[troubleCollector] = state.ErrorKinds|errorKind(current.Outcome) == 7
+	greeting := strings.ToLower(strings.TrimSpace(current.Expression))
+	eligible[fourthWall] = current.Outcome.Kind == contracts.OutcomeError && (greeting == "привет" || greeting == "hello")
+	for i := secondWind; i < len(catalog); i++ {
+		if r.enabled[i] && eligible[i] {
+			matches = append(matches, catalog[i].ID)
 		}
 	}
-	return false
+	return matches
 }
 
 func hasScientificFunctions(facts *contracts.CalculationFacts, required int) bool {

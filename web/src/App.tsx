@@ -5,7 +5,7 @@ import type { Achievement, CalculationRecord, CalculationRequest, Capabilities, 
 import { History } from './features/history/History';
 import { AchievementCollection } from './features/discoveries/AchievementCollection';
 import { useAchievementCelebration } from './features/discoveries/AchievementCelebration';
-import { DiscoveryNotice } from './features/discoveries/DiscoveryNotice';
+import { CalculatorPersonality } from './features/discoveries/CalculatorPersonality';
 import { ComicIncident } from './features/discoveries/ComicIncident';
 import { PreferencesPanel, usePreferences } from './features/preferences/Preferences';
 import { StatisticsPanel } from './features/statistics/StatisticsPanel';
@@ -44,6 +44,7 @@ export default function App() {
   const [discoveriesAvailable, setDiscoveriesAvailable] = useState(false);
   const [collectionLoading, setCollectionLoading] = useState(false);
   const [funEvents, setFunEvents] = useState<FunEvent[]>([]);
+  const [speechRequest, setSpeechRequest] = useState<{ eligible: boolean; submittedAt: number } | null>(null);
   const [incidentActive, setIncidentActive] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [selectedAward, setSelectedAward] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export default function App() {
   const sessionIdentity = useRef<string | null>(null);
   const sessionGeneration = useRef(0);
   const mounted = useRef(false);
+  const consoleRef = useRef<HTMLElement | null>(null);
   const toolController = useToolController(activeTool, setActiveTool, incidentActive || collectionOpen);
 
   const invalidateSession = useCallback(() => {
@@ -72,6 +74,7 @@ export default function App() {
     setDiscoveryCatalog([]);
     setDiscoveriesAvailable(false);
     setFunEvents([]);
+    setSpeechRequest(null);
     setIdentity(null);
   }, []);
 
@@ -118,6 +121,7 @@ export default function App() {
       setResult({ kind: 'idle' });
       setRestoredRecord(null);
       setFunEvents([]);
+      setSpeechRequest(null);
       setStatisticsRevision((revision) => revision + 1);
       setAnnouncement('Создана новая личная сессия. Предыдущая история относится к прежней сессии.');
       void readHistoryPage(null);
@@ -227,7 +231,8 @@ export default function App() {
     };
   }, [loadHistory]);
 
-  const submit = useCallback(async (request: CalculationRequest) => {
+  const submit = useCallback(async (request: CalculationRequest, deliberate = false) => {
+    const reactionRequest = { eligible: deliberate, submittedAt: Date.now() };
     let sequence = ++submissionSequence.current;
     let identity = sessionIdentity.current;
     let generation: number | null = null;
@@ -236,6 +241,7 @@ export default function App() {
     setRestoredRecord(null);
     setAnnouncement(calculationMessages.loading);
     setFunEvents([]);
+    setSpeechRequest(reactionRequest);
     setResult({ kind: 'loading', request });
     try {
       await ensureSession();
@@ -249,7 +255,8 @@ export default function App() {
       if (generation !== sessionGeneration.current) return;
       if (mounted.current && sequence === submissionSequence.current) {
         setResult({ kind: 'record', record: data.calculation, publication: data.publication.status });
-        setFunEvents(data.funEvents ?? []);
+        setFunEvents(deliberate ? data.funEvents ?? [] : []);
+        setSpeechRequest(reactionRequest);
         setAnnouncement(outcomeAnnouncement(data.calculation, capabilities, calculationMessages));
       }
       if (mounted.current) {
@@ -304,18 +311,40 @@ export default function App() {
   const restoredUnavailable = restoredRecord === null ? null : unavailableExtension(expression, capabilities, calculationMessages);
 
   return (
-    <main className="workspace" onKeyDown={toolController.onKeyDown}
+    <main className="workspace" data-effects={preferences.largeEffects} onKeyDown={(event) => {
+      const alreadyHandled = event.defaultPrevented;
+      toolController.onKeyDown(event);
+      if (!alreadyHandled && event.defaultPrevented && event.isTrusted) celebration.playButtonSound('close');
+    }}
       onPointerDownCapture={(event) => { if (event.isTrusted) celebration.unlockAudio(); }}
-      onKeyDownCapture={(event) => { if (event.isTrusted) celebration.unlockAudio(); }}>
+      onKeyDownCapture={(event) => { if (event.isTrusted) celebration.unlockAudio(); }}
+      onClickCapture={(event) => {
+        if (!event.isTrusted || !(event.target instanceof Element)) return;
+        const control = event.target.closest('button, summary');
+        if (!(control instanceof HTMLElement) || control.matches(':disabled, [inert] *')) return;
+        const cue = control.dataset.buttonCue;
+        if (cue === 'none') return;
+        if (control instanceof HTMLButtonElement) {
+          if (cue === 'panel') celebration.playButtonSound(control.getAttribute('aria-expanded') === 'true' ? 'close' : 'open');
+          else celebration.playButtonSound(cue === 'close' ? 'close' : cue === 'open' ? 'open' : cue === 'toggle' ? 'toggle' : 'edit');
+        } else {
+          celebration.playButtonSound(control.closest('details')?.open ? 'close' : 'open');
+        }
+      }}
+      onChangeCapture={(event) => {
+        if (event.isTrusted && event.target instanceof HTMLInputElement && /^(checkbox|radio)$/.test(event.target.type)) {
+          celebration.playButtonSound('toggle');
+        }
+      }}>
       <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <header className="workspace-header">
-        <h1 className="workspace-brand">
+        <h1 className="workspace-brand" data-speech-protected>
           <svg className="brand-mark" width="32" height="32" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
             <path d="M0 0h12v4H4v8H0zM20 0h12v12h-4V4h-8zM0 20h4v8h8v4H0zM28 20h4v12H20v-4h8zM10 10h4v4h-4zm4 4h4v4h-4zm-4 4h4v4h-4zm10 0h4v4h-4z" />
           </svg>
           <span>Unnecessarily<br /><strong>Advanced Calculator</strong></span>
         </h1>
-        <div className="workspace-header-actions">
+        <div className="workspace-header-actions" data-speech-protected>
         <div className="workspace-state" aria-label="Личный режим: вычисления не публикуются">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z" stroke="currentColor" strokeWidth="2" />
@@ -323,12 +352,14 @@ export default function App() {
           Личный
         </div>
         {capabilities?.features.achievements && <button id="header-achievements" className="header-settings" type="button"
+          data-button-cue="panel"
           aria-label="Достижения" aria-haspopup="dialog" aria-expanded={collectionOpen} onClick={() => openCollection()}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M8 3h8v8a4 4 0 0 1-8 0V3ZM8 5H4v4a4 4 0 0 0 4 4m8-8h4v4a4 4 0 0 1-4 4m-4 2v5m-5 1h10" stroke="currentColor" strokeWidth="2" />
           </svg><span>Достижения</span>
         </button>}
         <button id="sound-toggle" className="header-settings header-sound" type="button"
+          data-button-cue="none"
           aria-label={preferences.soundEnabled ? 'Выключить звук' : 'Включить звук'} aria-pressed={preferences.soundEnabled}
           title={preferences.soundEnabled ? 'Выключить звук' : 'Включить звук'}
           onClick={() => updatePreferences({ soundEnabled: !preferences.soundEnabled })}>
@@ -341,6 +372,7 @@ export default function App() {
         </button>
         {(capabilities?.features.themes || capabilities?.features.achievements) && (
           <button id="tool-settings" className="header-settings" type="button" aria-label="Настройки"
+            data-button-cue="panel"
             aria-expanded={activeTool === 'settings'} aria-controls={activeTool === 'settings' ? 'tool-bay' : undefined}
             onClick={() => toolController.toggle('settings')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -352,14 +384,16 @@ export default function App() {
       </header>
 
       <CalculatorInput
+        consoleRef={consoleRef}
+        effectsEnabled={preferences.largeEffects}
         expression={expression}
         capabilities={capabilities}
         activeTool={activeTool}
         toolController={toolController}
         onExpressionChange={(value) => { setExpression(value); setRestoredRecord(null); }}
-        onSubmit={() => {
-          celebration.playSubmitSound();
-          void submit({ requestId: crypto.randomUUID(), expression });
+        onSubmit={(trusted) => {
+          if (trusted) celebration.playSubmitSound();
+          void submit({ requestId: crypto.randomUUID(), expression }, trusted);
         }}
         settings={<PreferencesPanel preferences={preferences} onChange={updatePreferences}
           achievementsAvailable={capabilities?.features.achievements === true} themesAvailable={capabilities?.features.themes === true} />}
@@ -402,12 +436,17 @@ export default function App() {
           const span = record.outcome.kind === 'error' ? record.outcome.error.span : null;
           toolController.focusEditor({ selection: span ?? undefined });
         }} />
-      <DiscoveryNotice events={funEvents} catalog={discoveryCatalog} humorEnabled={preferences.humor && !incidentActive && !celebration.active}
-        onOpenCollection={() => openCollection()} />
       {capabilitiesError && <p className="capabilities-note" role="status">Не удалось проверить возможности сервера. Доступны базовые операции.</p>}
       </CalculatorInput>
+      <CalculatorPersonality identity={identity} calculation={result.kind === 'record' ? result.record : null}
+        speechEligible={speechRequest?.eligible ?? false} submittedAt={speechRequest?.submittedAt ?? null}
+        events={funEvents} catalog={discoveryCatalog}
+        enabled={preferences.humor && discoveriesAvailable} effectsEnabled={preferences.largeEffects}
+        suppressed={incidentActive || celebration.active || collectionOpen}
+        loading={result.kind === 'loading'} anchorRef={consoleRef} />
       {celebration.view}
       <AchievementCollection key={identity} catalog={discoveryCatalog} achievements={achievements} available={discoveriesAvailable}
+        effectsEnabled={preferences.largeEffects}
         loading={collectionLoading} open={collectionOpen} selectedId={selectedAward}
         freshAwardIds={celebration.freshAwardIds}
         onToggle={(open) => { if (open) openCollection(); else setCollectionOpen(false); }}

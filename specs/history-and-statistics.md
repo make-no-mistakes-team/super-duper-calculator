@@ -108,11 +108,13 @@ Measured statistics must derive from recorded data.
 The reaction catalog and eligibility rules belong to
 [Fun & Chaos](fun-and-chaos.md).
 
-`storage.CommitDiscoveryProgress(ctx, db, owner, expected, next, grants)`
-commits eligible awards and their evaluated-history checkpoint in one short
-transaction. A competing checkpoint invalidates the uncommitted batch; reload
-and evaluate it against the new prefix. Only newly saved awards are returned,
-grouped by their source calculation.
+`storage.CommitDiscoveryProgress(ctx, db, owner, expected, next, grants,
+evidence...)` commits eligible awards, serialized incremental state, indexed
+evidence, and their evaluated-history checkpoint in one short transaction.
+`DiscoveryProgress` contains `LastSequence`, `AcceptedCount`, and `StateJSON`.
+A competing checkpoint invalidates the uncommitted batch; reload and evaluate
+it against the new prefix. Only newly saved awards are returned, grouped by
+their source calculation.
 
 The first eligible action supplies its stored UTC creation time as `earnedAt`;
 later actions and retries preserve that value. A failed batch advances neither
@@ -125,14 +127,36 @@ adds the durable personal-scene cooldown without changing history or awards.
 Migration `004_discovery_progress.sql` stores each owner's evaluated sequence
 and accepted-action count. Progress and grants advance atomically, so bounded
 catch-up can resume after interruption or restart without skipping awards.
-New actions evaluate the unprocessed suffix with only the recent context their
-rules require.
+New actions evaluate the unprocessed suffix in commit order. Match with prior
+incremental `discovery.State`, then advance it once per accepted record. Streaks,
+recovery, recent numeric values, repeated source, and seen error categories
+survive restart without retaining or scanning a previous-record window.
 
-Migration `005_expression_angle_notation.sql` advances the schema to version 5
-and drops only the obsolete angle column. History, canonical outcomes, awards,
-scene state, and reconciliation checkpoints are preserved without expression
-rewrites. Keep a pre-upgrade backup: binaries supporting an older schema
-reject version 5.
+Migration `005_expression_angle_notation.sql` drops only the obsolete angle
+column without expression rewrites. Schema 6,
+`006_discovery_evidence.sql`, adds serialized state and three indexed evidence
+tables:
+
+- `discovery_routes`: up to three distinct parser-produced structures per
+  owner, semantics version, and canonical successful result;
+- `discovery_trig`: accumulated direct-trig degree/radian variant bits for
+  that same owner/version/result;
+- `discovery_expressions`: the earliest server success timestamp for each
+  owner/version/normalized-expression identity.
+
+`storage.ReadDiscoveryEvidence(ctx, db, owner, semantics, value, expression)`
+loads the relevant bounded snapshot; earlier actions within the current batch
+also contribute before it commits. The interface and parser facts are defined
+in [Application Service](application-service.md#calculation-record-and-response).
+
+The schema 6 development migration resets old evaluated sequence/count
+checkpoints for quiet catch-up from stored facts and outcomes. It preserves
+records, awards, and scene state, but does not promise old local progress
+compatibility. No historical source is reparsed or converted by the current
+mathematical engine. Old records without normalized expression or structure
+identities cannot supply evidence for the corresponding identity-specific
+rules. They remain readable and still supply applicable outcome/count facts.
+Keep a pre-upgrade backup; older binaries reject a newer schema.
 
 ## Room aggregates
 

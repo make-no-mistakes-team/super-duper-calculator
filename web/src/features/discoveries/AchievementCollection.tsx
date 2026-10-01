@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import type { Achievement, DiscoveryDefinition } from '../../contracts';
 import { achievementAccent, achievementArtwork } from './achievementPresentation';
 import { AchievementDescription } from './AchievementDescription';
+import { animateExitSnapshot } from './exitSnapshot';
 import './achievement-collection.css';
 
 export type AchievementCollectionProps = {
@@ -14,6 +15,7 @@ export type AchievementCollectionProps = {
   onToggle: (open: boolean) => void;
   selectedId?: string | null;
   freshAwardIds?: readonly string[];
+  effectsEnabled?: boolean;
 };
 
 const earnedDate = new Intl.DateTimeFormat('ru-RU', {
@@ -27,12 +29,14 @@ function dateLabel(value: string) {
 
 export function AchievementCollection({
   catalog, achievements, available, loading, onRetry, open, onToggle, selectedId, freshAwardIds,
+  effectsEnabled = true,
 }: AchievementCollectionProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const cardsRef = useRef(new Map<string, HTMLLIElement>());
+  const exitCleanupRef = useRef<(() => void) | null>(null);
   const earnedById = new Map(achievements.map((award) => [award.id, award.earnedAt]));
   const earnedCount = catalog.filter((definition) => earnedById.has(definition.id)).length;
   const orderedCatalog = [
@@ -48,11 +52,28 @@ export function AchievementCollection({
     target?.focus({ preventScroll: true });
   };
 
+  const clearExit = () => {
+    exitCleanupRef.current?.();
+    exitCleanupRef.current = null;
+  };
+
+  const closeNative = () => {
+    const dialog = dialogRef.current;
+    if (!dialog?.open) return;
+    clearExit();
+    if (effectsEnabled) {
+      exitCleanupRef.current = animateExitSnapshot(dialog, 'achievement-collection--closing', 190);
+    }
+    dialog.close();
+    restoreOpener();
+  };
+
   // Synchronize with the native top layer, without closing it during StrictMode's
   // effect replay. Only a real controlled close changes focus.
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
+    if (open) clearExit();
     if (open && !dialog.open) {
       const active = document.activeElement;
       if (active instanceof HTMLElement && !dialog.contains(active) && active !== document.body) {
@@ -63,10 +84,13 @@ export function AchievementCollection({
       dialog.showModal();
       closeRef.current?.focus({ preventScroll: true });
     } else if (!open && dialog.open) {
-      dialog.close();
-      restoreOpener();
+      closeNative();
     }
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!effectsEnabled) clearExit();
+  }, [effectsEnabled]);
 
   useLayoutEffect(() => {
     if (!open || !selectedId) return;
@@ -76,6 +100,7 @@ export function AchievementCollection({
   useEffect(() => {
     const dialog = dialogRef.current;
     return () => {
+      clearExit();
       // A StrictMode cleanup still has a connected dialog. A real removal does
       // not; defer until React has committed the removal before restoring focus.
       queueMicrotask(() => {
@@ -85,8 +110,7 @@ export function AchievementCollection({
   }, []);
 
   const close = () => {
-    dialogRef.current?.close();
-    restoreOpener();
+    closeNative();
     onToggle(false);
   };
 
@@ -95,6 +119,8 @@ export function AchievementCollection({
       ref={dialogRef}
       id="achievement-collection"
       className="achievement-collection"
+      data-effects={effectsEnabled ? 'on' : 'off'}
+      data-speech-protected
       aria-labelledby="achievement-collection-title"
       onCancel={(event) => { event.preventDefault(); event.stopPropagation(); close(); }}
       onClose={(event) => {
@@ -116,7 +142,7 @@ export function AchievementCollection({
             {catalog.length > 0 ? `Получено ${earnedCount} из ${catalog.length}` : 'Личная коллекция'}
           </p>
         </div>
-        <button ref={closeRef} className="achievement-collection__close" type="button" onClick={close} aria-label="Закрыть достижения">
+        <button ref={closeRef} className="achievement-collection__close" type="button" onClick={close} data-button-cue="close" aria-label="Закрыть достижения">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 4 12 12M16 4 4 16" stroke="currentColor" strokeWidth="1.5" /></svg>
         </button>
       </header>
@@ -129,7 +155,7 @@ export function AchievementCollection({
         )}
         {catalog.length > 0 && (
             <ul className="achievement-collection__list">
-              {orderedCatalog.map((definition) => {
+              {orderedCatalog.map((definition, index) => {
                 const earnedAt = earnedById.get(definition.id);
                 const earned = earnedAt !== undefined;
                 const date = earned ? dateLabel(earnedAt) : null;
@@ -138,7 +164,7 @@ export function AchievementCollection({
                     key={definition.id}
                     ref={(element) => { if (element) cardsRef.current.set(definition.id, element); else cardsRef.current.delete(definition.id); }}
                     className={`achievement-collection__item${earned ? ' achievement-collection__item--earned' : ''}${selectedId === definition.id ? ' achievement-collection__item--selected' : ''}`}
-                    style={achievementAccent(definition.id)}
+                    style={{ ...achievementAccent(definition.id), '--award-arrival-delay': `${Math.min(index, 21) * 4}ms` } as CSSProperties}
                     data-achievement-id={definition.id}
                   >
                     <img className="achievement-collection__artwork" src={achievementArtwork(definition.id)} width="128" height="128" alt="" loading="lazy" />

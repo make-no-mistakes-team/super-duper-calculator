@@ -3,6 +3,8 @@ package calculation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"strconv"
@@ -216,6 +218,8 @@ func tokenWidth(token string) int {
 // an operation calls the expressions of its operands.
 type expr func() (float64, *contracts.MathError)
 
+var valueStructure = sha256.Sum256([]byte("value"))
+
 // operator describes one entry of the operators table.
 type operator struct {
 	prec    int  // higher binds stronger
@@ -345,8 +349,11 @@ var operators = map[string]operator{
 // span of its source text, evaluation errors point at the failed operation.
 func parse(tokens []string, starts []int, facts *contracts.CalculationFacts) (expr, *contracts.MathError) {
 	type operand struct {
-		expr expr
-		span contracts.SourceSpan
+		expr       expr
+		span       contracts.SourceSpan
+		normalized [sha256.Size]byte
+		structure  [sha256.Size]byte
+		degrees    bool
 	}
 	type pending struct {
 		key string // operators key or "("
@@ -383,6 +390,30 @@ func parse(tokens []string, starts []int, facts *contracts.CalculationFacts) (ex
 		args := append([]operand(nil), operands[len(operands)-o.arity:]...)
 		operands = operands[:len(operands)-o.arity]
 
+		// Merkle identities follow actual parser reductions, not token counts.
+		// Parentheses only alter spans; numeric spellings share canonical leaves.
+		var normalized, structure [128]byte
+		n := copy(normalized[:], p.key)
+		normalized[n] = 0
+		n++
+		copy(structure[:n], normalized[:n])
+		for _, a := range args {
+			copy(normalized[n:], a.normalized[:])
+			copy(structure[n:], a.structure[:])
+			n += sha256.Size
+		}
+		normalizedID := sha256.Sum256(normalized[:n])
+		structureID := valueStructure
+		if o.arity > 0 {
+			structureID = sha256.Sum256(structure[:n])
+		}
+		degrees := p.key == "°"
+		for _, a := range args {
+			degrees = degrees || a.degrees
+		}
+		if (p.key == "sin" || p.key == "cos" || p.key == "tan") && degrees {
+			facts.TrigWithDegrees = true
+		}
 		span := contracts.SourceSpan{Start: starts[p.at], End: starts[p.at] + tokenWidth(tokens[p.at])} // constant
 		if len(args) > 0 {
 			if o.postfix {
@@ -394,7 +425,7 @@ func parse(tokens []string, starts []int, facts *contracts.CalculationFacts) (ex
 				span.Start = args[0].span.Start
 			}
 		}
-		operands = append(operands, operand{span: span, expr: func() (float64, *contracts.MathError) {
+		operands = append(operands, operand{span: span, normalized: normalizedID, structure: structureID, degrees: degrees, expr: func() (float64, *contracts.MathError) {
 			x := make([]float64, len(args))
 			for k, a := range args {
 				v, merr := a.expr()
@@ -545,7 +576,13 @@ func parse(tokens []string, starts []int, facts *contracts.CalculationFacts) (ex
 			if err != nil { // 1e400
 				return nil, fail(contracts.ErrorNumericOverflow, at, map[string]any{"literal": t})
 			}
-			operands = append(operands, operand{span: at, expr: func() (float64, *contracts.MathError) { return v, nil }})
+			var numberIdentity [64]byte
+			n := copy(numberIdentity[:], "number:")
+			canonical := strconv.AppendFloat(numberIdentity[:n], v, 'g', -1, 64)
+			operands = append(operands, operand{span: at,
+				normalized: sha256.Sum256(canonical),
+				structure:  valueStructure,
+				expr:       func() (float64, *contracts.MathError) { return v, nil }})
 			expectOperand = false
 
 		case !expectOperand:
@@ -608,5 +645,7 @@ func parse(tokens []string, starts []int, facts *contracts.CalculationFacts) (ex
 	if len(operands) != 1 {
 		return nil, &contracts.MathError{Code: contracts.ErrorSyntax, Stage: contracts.StageParse, Params: map[string]any{"expected": "operator"}}
 	}
+	facts.NormalizedExpression = hex.EncodeToString(operands[0].normalized[:])
+	facts.StructureIdentity = hex.EncodeToString(operands[0].structure[:])
 	return operands[0].expr, nil
 }

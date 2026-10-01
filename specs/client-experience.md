@@ -49,6 +49,14 @@ accessible name “Запятая”, without an argument explanation or tooltip
 Opening syntax help scrolls it into view within the panel. Reduced-motion users
 get an immediate scroll.
 
+With effects enabled, buttons compress on press and rebound on release.
+Desktop tools disclose laterally with elastic settling; phone sheets rise
+from below and retract on dismissal. Closing changes the active tool and
+restores focus immediately, while the outgoing painted panel remains inert,
+accessibility-hidden, and click-through for its 190ms exit. Reduced motion or
+effects-off removes this delayed visual frame. Result feedback is brief and
+never adds computation latency.
+
 ## Core interaction
 
 - Enter submits the expression; the visible calculate action does the same.
@@ -97,15 +105,27 @@ The native collection modal has an opaque 16px-rounded window and opaque
 12px-rounded cards, with two substantial card columns on desktop and one on
 phones. Only the inner body scrolls; the outer dialog uses `overflow: clip`,
 so focus and selected-card scrolling cannot move the header or close control.
-Opening unmasks the final-size window over 300ms, with the header, close
-control, and focus available immediately. Reduced motion opens it instantly.
+Opening unmasks the final-size window over 280ms with elastic settling,
+staggered card disclosure, and icon squash/stretch. The header, close control,
+and focus are available immediately. Reduced motion or effects-off opens it
+instantly.
 Close and Escape restore the opener, falling back to the expression editor;
 modal dismissal does not also close the tool bay. Loading and unavailable
 states have their own retry action.
 
-Names and icons are always visible. Locked icons are desaturated; earned cards
-show color, earned status, and date. Keep the earned counter and one flat grid
-ordered as earned, ordinary locked, then secret locked, preserving server
+The real modal closes and focus restores immediately. With motion and effects
+allowed, a 190ms exit snapshot folds away the painted window and icons. This
+frame is inert, accessibility-hidden, and click-through, without a modal
+backdrop, duplicate live controls, or continuing cipher/decode activity.
+Reopening, resize, tab hiding, reduced-motion changes, and unmount clear it.
+
+Names and icons are always visible. Earned cards use an award-accent gradient,
+bright solid border, unfiltered color artwork, earned status, and date. Locked
+cards use a darker page-background canvas, muted dashed border, and grayscale
+artwork at 55% brightness. Names, status, ordinary conditions, and concealed
+text remain readable in both themes; do not dim the entire card.
+Keep the earned counter and one flat grid ordered as earned, ordinary locked,
+then secret locked, preserving server
 catalog order within each category. Do not add group headings. Every locked
 card has the generic “Not earned” status (“Не получено”); secret cards have no
 “Secret” badge or explanatory condition paragraph.
@@ -140,18 +160,66 @@ keeps the result readable. Error outcomes and short viewports place the card
 after the result in document flow, without forced scrolling. The finite pixel
 burst spans the viewport but never intercepts input.
 
+The 22-entry catalog, including ten secrets, is defined in
+[Fun & Chaos](fun-and-chaos.md#personal-discovery-catalog); the service remains
+the authority for every award.
+
+## Ordinary personality and audio
+
+An identity-scoped pixel face reacts to real loading, successful calculations,
+errors, and recovery. While idle, it slowly hovers, occasionally blinks or
+double-blinks, and briefly looks toward the editor. Reactions immediately
+override this silent background motion; effects-off and reduced motion stop it.
+Ordinary speech uses the offline 200-entry RU/EN catalog
+and trusted outcomes. Eligible deliberate newest-visible outcomes have a 70%
+speech chance, with starts at least five seconds apart, 4.5 seconds of display,
+one bubble, and no backlog. Remember 32 recent phrase IDs and recent contexts.
+Server discovery comments share the same surface. Bootstrap, history reuse,
+transport retries, and stale responses do not create ordinary personality
+reactions. Quiet newest-visible accepted outcomes still update recovery,
+repeat context, and deduplication once. Pending submissions, replacement
+outcomes, and failed or retried requests preserve active speech until its
+original deadline, without replacing the text, extending its timer, or queuing
+another comment. Freshness uses browser submission time and visibility,
+with no replay on resume.
+
+The bubble emerges from a randomly selected measured console-edge slot,
+squashes and stretches into place, and retracts with its tail. Check the whole
+motion envelope and actual tail against critical editor/result/error content,
+submit, header, tools, notices, and the visible viewport. Avoid repeating a
+slot when alternatives exist. Re-measure on resize, scrolling, and tool changes;
+skip when no safe slot remains, including cramped phone/keyboard layouts.
+Speech is click-through and never moves focus or automatically announces a
+stream of jokes to assistive technology.
+
+Humor-off disables the face and speech; effects-off and reduced motion simplify
+feedback without changing mathematics. Hidden tabs stop nonessential activity.
+Active or pending ceremonies, open modals, and comic scenes suppress ordinary
+personality without deferring it. Full catalog, grammar, selection, and placement
+rules are in [Fun & Chaos](fun-and-chaos.md#ordinary-personality).
+
 Sound is independently persisted as `Preferences.soundEnabled`, defaulting to
 `true`. Trusted click or Enter interaction activates the Web Audio context;
 playback before a user gesture is not guaranteed. A new intentional calculation
-dispatch from the calculate button, Enter, or keypad plays a quiet 65ms triangle
-tick starting at 440Hz. It signals dispatch, not success. Typing, empty input,
-Shift+Enter, IME composition, transport retries, and collection browsing stay
-quiet. The tick shares the award cue's audio context and mute preference;
-another dispatch replaces its active tick rather than queuing it. The original
-short five-step award cue takes priority and stops any submit tick. Muting
-stops both immediately, and disposal releases both. The settings label
-`«Спецэффекты»` controls `Preferences.largeEffects` independently of sound and
-humor. A basic earned notice remains visible when humor or special effects are
+dispatch from the calculate button, Enter, or keypad plays a 65ms triangle
+tick falling from 440Hz to 330Hz. It signals dispatch, not success. Typing, empty input,
+Shift+Enter, IME composition, transport retries, hover, focus, disabled controls,
+and synthetic/programmatic activation stay quiet. Collection/tool open and
+close, editing/keypad/copy, and toggle actions have distinct motifs. Ordinary
+cues and the award cue use four times their preceding signal amplitude
+(about +12dB), with stronger native award RMS and
+clipping headroom as specified in
+[Fun & Chaos](fun-and-chaos.md#settings-and-rehearsal).
+Trusted click/change/Enter activation produces one cue, without duplicate
+submit or checkbox feedback. Ordinary audio shares the award cue's lazy context
+and mute preference; bursts replace or drop the active ordinary cue rather
+than queue it. The original short five-step award cue preempts ordinary sound;
+active or pending ceremonies suppress button and submit cues. Muting stops
+all voices immediately, and disposal releases them and the context.
+The settings label `«Спецэффекты»` controls `Preferences.largeEffects` independently
+of sound and humor, with the caption
+«Живые анимации, праздник достижений и шуточные сцены.».
+A basic earned notice remains visible when humor or special effects are
 off. OS reduced motion separately reduces visual motion.
 
 ## Optional themes

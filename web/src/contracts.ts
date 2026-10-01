@@ -48,6 +48,9 @@ export type CalculationFacts = {
   functions: Record<string, number>;
   operationCount: number;
   depth: number;
+  normalizedExpression?: string;
+  structureIdentity?: string;
+  trigWithDegrees?: boolean;
 };
 
 export type RoomContext = {

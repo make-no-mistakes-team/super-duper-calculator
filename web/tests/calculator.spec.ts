@@ -133,22 +133,28 @@ test('fresh awards from an older reply queue without replacing results or replay
     const ceremony = page.getByRole('complementary', { name: 'Новое достижение', exact: true });
     await expect(ceremony).toHaveAttribute('data-achievement-id', 'six_seven');
     await expect(page.locator('#expression')).toBeFocused();
+    const multiple = await calculate(page, 'sqrt(16)/abs(-4)+ln(1)');
+    expect(multiple.achievements?.map((award) => award.id)).toEqual(['scientific_method', 'paper_tiger']);
     await calculate(page, '3+4');
     await expect(ceremony).toHaveAttribute('data-achievement-id', 'six_seven');
     await delayed.deliver();
     await expect(page.locator('.result-value')).toHaveText('= 7');
     await expect(page.locator('.result-source code')).toHaveText('3+4');
-    await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
-    await expect(ceremony).toHaveAttribute('data-achievement-id', 'answer_found');
-    await expect(page.locator('.result-value')).toHaveText('= 7');
+    for (const id of ['scientific_method', 'paper_tiger', 'answer_found']) {
+      await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
+      await expect(ceremony).toHaveAttribute('data-achievement-id', id);
+      await expect(page.locator('.result-value')).toHaveText('= 7');
+      await expect(page.locator('#expression')).toHaveValue('3+4');
+    }
     await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
     await expect(ceremony).toHaveCount(0);
     await openCalculator(page);
     await expect(ceremony).toHaveCount(0);
     await page.locator('#header-achievements').click();
     const dialog = page.getByRole('dialog', { name: 'Достижения', exact: true });
-    await expect(dialog.locator('[data-achievement-id="answer_found"] time')).toBeVisible();
-    await expect(dialog.locator('[data-achievement-id="six_seven"] time')).toBeVisible();
+    for (const id of ['answer_found', 'six_seven', 'scientific_method', 'paper_tiger']) {
+      await expect(dialog.locator(`[data-achievement-id="${id}"] time`)).toHaveCount(1);
+    }
     await page.keyboard.press('Escape');
     await expect(ceremony).toHaveCount(0);
   } finally {
@@ -307,6 +313,7 @@ test('collection is the topmost dialog and restores its opener without closing t
   await page.locator('#header-achievements').click();
   const dialog = page.getByRole('dialog', { name: 'Достижения', exact: true });
   await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-achievement-id]')).toHaveCount(22);
   await expect(dialog.getByRole('button', { name: 'Закрыть достижения' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();

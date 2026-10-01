@@ -88,5 +88,18 @@ func validDiscoveryFacts(facts *contracts.CalculationFacts) bool {
 			return false
 		}
 	}
+	for _, identity := range []string{facts.NormalizedExpression, facts.StructureIdentity} {
+		if identity == "" {
+			continue
+		}
+		if len(identity) != 64 {
+			return false
+		}
+		for _, c := range identity {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return false
+			}
+		}
+	}
 	return true
 }

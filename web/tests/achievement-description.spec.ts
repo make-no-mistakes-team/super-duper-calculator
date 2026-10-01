@@ -4,7 +4,7 @@ import { expect, openCalculator, test } from './calculator-fixture';
 
 declare global {
   interface Window {
-    calculatorDescriptionFrames: string[];
+    calculatorReplayedDecode: boolean;
   }
 }
 
@@ -13,6 +13,15 @@ async function unchangedCipher(cipher: Locator) {
   // Observe across multiple authored cipher ticks, rather than racing one frame.
   await cipher.page().waitForTimeout(650);
   return await cipher.textContent() === before;
+}
+
+function watchReplayedDecode() {
+  window.calculatorReplayedDecode = false;
+  new MutationObserver(() => {
+    if (document.querySelector('#achievement-collection [data-achievement-id="answer_found"] .achievement-description--decoding')) {
+      window.calculatorReplayedDecode = true;
+    }
+  }).observe(document, { attributes: true, childList: true, subtree: true });
 }
 
 test('locked cipher changes only while visible and pauses offscreen, closed and under reduced motion', async ({ page }) => {
@@ -45,16 +54,6 @@ test('locked cipher changes only while visible and pauses offscreen, closed and 
 });
 
 test('a visible locked award decodes only its authoritative grant, never collection browsing or bootstrap', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.calculatorDescriptionFrames = [];
-    const observer = new MutationObserver(() => {
-      const description = document.querySelector('#achievement-collection [data-achievement-id="answer_found"] p');
-      if (!description) return;
-      const visual = description.querySelector('[aria-hidden="true"]') ?? description;
-      window.calculatorDescriptionFrames.push(visual.textContent ?? '');
-    });
-    observer.observe(document, { attributes: true, childList: true, characterData: true, subtree: true });
-  });
   await openCalculator(page);
   const sessionReply = await page.request.get('/api/session');
   expect(sessionReply.status()).toBe(200);
@@ -94,27 +93,30 @@ test('a visible locked award decodes only its authoritative grant, never collect
     expect((await calculation).status()).toBe(200);
     await expect(card.locator('.achievement-description--decoding')).toBeVisible();
     await card.scrollIntoViewIfNeeded();
-    await expect(card.locator('.achievement-collection__description')).toHaveText(definition.ru.description);
     await expect(card.locator('.achievement-description--decoding')).toHaveCount(0);
+    await expect(card.locator('.achievement-description__cipher')).toHaveCount(0);
+    await expect(card.locator('time')).toBeVisible();
     const earnedAt = await card.locator('time').getAttribute('datetime');
-    await page.evaluate(() => { window.calculatorDescriptionFrames = []; });
+    await page.addInitScript(watchReplayedDecode);
+    await page.evaluate(watchReplayedDecode);
     await page.keyboard.press('Escape');
     const ceremony = page.getByRole('complementary', { name: 'Новое достижение', exact: true });
     await ceremony.getByRole('button', { name: 'Закрыть уведомление о достижении', exact: true }).click();
     await page.locator('#header-achievements').click();
     await card.scrollIntoViewIfNeeded();
-    await expect(card.locator('.achievement-collection__description')).toHaveText(definition.ru.description);
+    await expect(card.locator('.achievement-description--decoding')).toHaveCount(0);
+    await expect(card.locator('.achievement-description__cipher')).toHaveCount(0);
     await expect(card.locator('time')).toHaveAttribute('datetime', earnedAt!);
-    expect(await page.evaluate((text) => window.calculatorDescriptionFrames.every((frame) => frame === text), definition.ru.description)).toBe(true);
+    expect(await page.evaluate(() => window.calculatorReplayedDecode)).toBe(false);
     await page.keyboard.press('Escape');
     await openCalculator(page);
     await expect(ceremony).toHaveCount(0);
     await page.locator('#header-achievements').click();
     await card.scrollIntoViewIfNeeded();
     await expect(card.locator('.achievement-description--decoding')).toHaveCount(0);
-    await expect(card.locator('.achievement-collection__description')).toHaveText(definition.ru.description);
+    await expect(card.locator('.achievement-description__cipher')).toHaveCount(0);
     await expect(card.locator('time')).toHaveAttribute('datetime', earnedAt!);
-    expect(await page.evaluate((text) => window.calculatorDescriptionFrames.every((frame) => frame === text), definition.ru.description)).toBe(true);
+    expect(await page.evaluate(() => window.calculatorReplayedDecode)).toBe(false);
   } finally {
     release();
     await page.unroute('**/api/calculations');

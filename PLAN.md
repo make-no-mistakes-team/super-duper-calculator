@@ -7,10 +7,11 @@
 
 A polished scientific calculator with an unexpectedly playful personality.
 
-At first glance, it is a familiar, calm, attractive tool. Through ordinary use,
-people discover comments, achievements, numerical jokes, escalating reactions,
-and occasional theatrical effects. A shared room can turn that discovery into
-a collective experience.
+It is a familiar, attractive tool with frequent, nonblocking ordinary comments
+and a pixel personality that responds to real calculations. Through use,
+people discover achievements, numerical jokes, escalating reactions, and
+occasional theatrical effects. A shared room can turn that discovery into a
+collective experience.
 
 ## Course requirements
 

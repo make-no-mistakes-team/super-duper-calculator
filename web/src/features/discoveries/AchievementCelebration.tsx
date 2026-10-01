@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Achievement, DiscoveryDefinition } from '../../contracts';
-import { AchievementAudio } from './achievementAudio';
+import { AchievementAudio, type ButtonCue } from './achievementAudio';
 import { achievementAccent, achievementArtwork } from './achievementPresentation';
 import { AchievementDescription } from './AchievementDescription';
+import { animateExitSnapshot } from './exitSnapshot';
 import './achievement-celebration.css';
 
 export type AchievementCelebrationOptions = {
@@ -46,6 +47,7 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
   view: ReactNode;
   unlockAudio: () => void;
   playSubmitSound: () => void;
+  playButtonSound: (cue: ButtonCue) => void;
   freshAwardIds: readonly string[];
   active: boolean;
 } {
@@ -53,6 +55,7 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
   const committedOptions = useRef(options);
   const audio = useRef<AchievementAudio | null>(null);
   const mounted = useRef(false);
+  const exitCleanup = useRef<(() => void) | null>(null);
   const [snapshot, setSnapshot] = useState<QueueSnapshot>({ identity: options.identity, current: null, waitingCount: 0, freshAwardIds: EMPTY_AWARD_IDS });
 
   const publish = useCallback(() => {
@@ -86,10 +89,12 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
   useLayoutEffect(() => {
     committedOptions.current = options;
     if (queue.current.identity !== options.identity) {
+      exitCleanup.current?.();
       audio.current?.stop();
       queue.current = freshQueue(options.identity);
     }
     if (!options.soundEnabled) audio.current?.stop();
+    if (!options.effectsEnabled) exitCleanup.current?.();
     advance();
     publish();
   }, [options.identity, options.catalog, options.soundEnabled, options.effectsEnabled, options.onOpenCollection, advance, publish]);
@@ -120,10 +125,21 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
   }, []);
 
   const playSubmitSound = useCallback(() => {
-    if (!committedOptions.current.soundEnabled) return;
+    if (!committedOptions.current.soundEnabled || queue.current.current || queue.current.waiting.length > 0) return;
     audio.current ??= new AchievementAudio();
     audio.current.unlock();
     audio.current.playSubmit();
+  }, []);
+
+  const playButtonSound = useCallback((cue: ButtonCue) => {
+    if (!committedOptions.current.soundEnabled || queue.current.current || queue.current.waiting.length > 0) return;
+    audio.current?.playButton(cue);
+  }, []);
+
+  const captureExit = useCallback((element: HTMLElement | null) => {
+    exitCleanup.current?.();
+    exitCleanup.current = element && committedOptions.current.effectsEnabled
+      ? animateExitSnapshot(element, 'achievement-ceremony-stage--exiting', 190) : null;
   }, []);
 
   useEffect(() => {
@@ -133,6 +149,7 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
     return () => {
       mounted.current = false;
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      exitCleanup.current?.();
       queueMicrotask(() => { if (!mounted.current) audio.current?.dispose(); });
     };
   }, []);
@@ -156,17 +173,18 @@ export function useAchievementCelebration(options: AchievementCelebrationOptions
       effectsEnabled={options.effectsEnabled}
       waitingCount={snapshot.waitingCount}
       onDismiss={() => dismiss(current.sequence)}
+      onExit={captureExit}
       onOpenCollection={() => {
         dismiss(current.sequence);
         committedOptions.current.onOpenCollection(current.award.id);
       }}
     />
   ) : null;
-  return { enqueue, view, unlockAudio, playSubmitSound, freshAwardIds: sameOwner ? snapshot.freshAwardIds : EMPTY_AWARD_IDS, active };
+  return { enqueue, view, unlockAudio, playSubmitSound, playButtonSound, freshAwardIds: sameOwner ? snapshot.freshAwardIds : EMPTY_AWARD_IDS, active };
 }
 
 // A finite, deterministic pixel burst, authored once per award. Coordinates and
-// timings are geometry, not an icon or substitute for the eight real sprites.
+// timings are geometry, not an icon or substitute for the authored sprites.
 const sparks = Array.from({ length: 36 }, (_, index) => {
   const angle = index * Math.PI * 2 / 36;
   const reach = 90 + (index % 4) * 34;
@@ -180,12 +198,13 @@ const sparks = Array.from({ length: 36 }, (_, index) => {
   } as CSSProperties;
 });
 
-function AwardCeremony({ moment, effectsEnabled, waitingCount, onDismiss, onOpenCollection }: {
+function AwardCeremony({ moment, effectsEnabled, waitingCount, onDismiss, onOpenCollection, onExit }: {
   moment: AwardMoment;
   effectsEnabled: boolean;
   waitingCount: number;
   onDismiss: () => void;
   onOpenCollection: () => void;
+  onExit: (element: HTMLElement | null) => void;
 }) {
   const card = useRef<HTMLElement | null>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -217,9 +236,10 @@ function AwardCeremony({ moment, effectsEnabled, waitingCount, onDismiss, onOpen
   const finish = useCallback(() => {
     if (dismissed.current) return;
     dismissed.current = true;
+    onExit(card.current?.closest<HTMLElement>('.achievement-ceremony-stage') ?? null);
     restoreFocus();
     dismissHandler.current();
-  }, [restoreFocus]);
+  }, [restoreFocus, onExit]);
 
   useEffect(() => {
     const delay = Math.max(0, burstDeadline.current - performance.now());
@@ -266,6 +286,7 @@ function AwardCeremony({ moment, effectsEnabled, waitingCount, onDismiss, onOpen
   const openCollection = () => {
     if (dismissed.current) return;
     dismissed.current = true;
+    onExit(card.current?.closest<HTMLElement>('.achievement-ceremony-stage') ?? null);
     restoreFocus();
     onOpenCollection();
   };
@@ -310,11 +331,11 @@ function AwardCeremony({ moment, effectsEnabled, waitingCount, onDismiss, onOpen
             className="achievement-ceremony__description"
           />
           <div className="achievement-ceremony__actions">
-            <button type="button" onClick={openCollection}>В коллекцию</button>
+            <button type="button" data-button-cue="open" onClick={openCollection}>В коллекцию</button>
             {waitingCount > 0 && <span className="achievement-ceremony__queued">Следом: {waitingCount}</span>}
           </div>
         </div>
-        <button className="achievement-ceremony__close" type="button" onClick={finish} aria-label="Закрыть уведомление о достижении">
+        <button className="achievement-ceremony__close" type="button" data-button-cue="close" onClick={finish} aria-label="Закрыть уведомление о достижении">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="m4 4 10 10M14 4 4 14" stroke="currentColor" strokeWidth="1.5" /></svg>
         </button>
       </aside>

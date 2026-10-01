@@ -87,10 +87,13 @@ type CalculationContext struct {
 }
 
 type CalculationFacts struct {
-	Operators      map[string]int `json:"operators"`
-	Functions      map[string]int `json:"functions"`
-	OperationCount int            `json:"operationCount"`
-	Depth          int            `json:"depth"`
+	Operators            map[string]int `json:"operators"`
+	Functions            map[string]int `json:"functions"`
+	OperationCount       int            `json:"operationCount"`
+	Depth                int            `json:"depth"`
+	NormalizedExpression string         `json:"normalizedExpression,omitempty"`
+	StructureIdentity    string         `json:"structureIdentity,omitempty"`
+	TrigWithDegrees      bool           `json:"trigWithDegrees,omitempty"`
 }
 
 type RoomContext struct {

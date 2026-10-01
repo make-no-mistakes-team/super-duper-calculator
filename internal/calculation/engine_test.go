@@ -3,8 +3,8 @@ package calculation_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +20,11 @@ func evaluate(t *testing.T, expression string) calculation.Evaluation {
 		t.Fatalf("%q: unexpected service error %v", expression, err)
 	}
 	return ev
+}
+
+func sameOperationFacts(got *contracts.CalculationFacts, want contracts.CalculationFacts) bool {
+	return got != nil && maps.Equal(got.Operators, want.Operators) &&
+		maps.Equal(got.Functions, want.Functions) && got.OperationCount == want.OperationCount && got.Depth == want.Depth
 }
 
 // Arithmetic part of the mathematical corpus (specs/quality-and-testing.md).
@@ -150,7 +155,7 @@ func TestFacts(t *testing.T) {
 		ev := evaluate(t, tc.expression)
 		want := tc.facts
 		want.Functions = map[string]int{}
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, want) {
+		if !sameOperationFacts(ev.Facts, want) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, want)
 		}
 	}
@@ -503,7 +508,7 @@ func TestFactorialErrorsAndFacts(t *testing.T) {
 		{"(-3)!", contracts.CalculationFacts{Operators: map[string]int{"!": 1}, Functions: map[string]int{}, OperationCount: 1, Depth: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+		if !sameOperationFacts(ev.Facts, tc.facts) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}
@@ -557,7 +562,7 @@ func TestPercentageErrorsAndFacts(t *testing.T) {
 		{"sqrt(25)%", contracts.CalculationFacts{Operators: map[string]int{"%": 1}, Functions: map[string]int{"sqrt": 1}, OperationCount: 2, Depth: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+		if !sameOperationFacts(ev.Facts, tc.facts) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}
@@ -659,7 +664,7 @@ func TestRemainderErrorsAndFacts(t *testing.T) {
 		{"mod(1/0,3)", contracts.CalculationFacts{Operators: map[string]int{"/": 1}, Functions: map[string]int{"mod": 1}, OperationCount: 2, Depth: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+		if !sameOperationFacts(ev.Facts, tc.facts) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}
@@ -685,7 +690,7 @@ func TestScientificFacts(t *testing.T) {
 		{"tan(90°)", contracts.CalculationFacts{Operators: map[string]int{"°": 1}, Functions: map[string]int{"tan": 1}, OperationCount: 2, Depth: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+		if !sameOperationFacts(ev.Facts, tc.facts) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}
@@ -733,7 +738,7 @@ func TestDegreePostfixPrecedenceAndGrouping(t *testing.T) {
 		{"(180°)°", contracts.CalculationFacts{Operators: map[string]int{"°": 2}, Functions: map[string]int{}, OperationCount: 2, Depth: 1}},
 	} {
 		ev := evaluate(t, tc.expression)
-		if ev.Facts == nil || !reflect.DeepEqual(*ev.Facts, tc.facts) {
+		if !sameOperationFacts(ev.Facts, tc.facts) {
 			t.Errorf("%q facts = %+v, want %+v", tc.expression, ev.Facts, tc.facts)
 		}
 	}

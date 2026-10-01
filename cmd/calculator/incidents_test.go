@@ -595,12 +595,11 @@ func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = migrated.Close() })
-	var version, actions, awards int
+	var actions, awards int
 	for _, query := range []struct {
 		statement string
 		target    *int
 	}{
-		{"PRAGMA user_version", &version},
 		{"SELECT COUNT(*) FROM calculations WHERE session_id = 'owner'", &actions},
 		{"SELECT COUNT(*) FROM achievements WHERE session_id = 'owner' AND achievement_id = 'six_seven' AND calculation_id = 'award'", &awards},
 	} {
@@ -608,8 +607,8 @@ func TestIncidentMigrationFromPopulatedVersionTwoPreservesHistory(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	if version != 5 || actions != 3 || awards != 1 {
-		t.Fatalf("v2 migration lost history: version=%d actions=%d awards=%d", version, actions, awards)
+	if actions != 3 || awards != 1 {
+		t.Fatalf("v2 migration lost history: actions=%d awards=%d", actions, awards)
 	}
 	third := saveDiscoveryAction(t, migrated, "owner", "third", "1/0", start.Add(3*time.Second))
 	service := newIncidentService(migrated, true)

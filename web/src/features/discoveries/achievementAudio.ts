@@ -1,14 +1,34 @@
 type Cue = {
   output: GainNode;
-  voices: Set<OscillatorNode>;
+  voices: Map<OscillatorNode, GainNode>;
   cleanup: number;
 };
 
-/** Shared gesture audio: a quiet dispatch tick and the authored award signal. */
+export type ButtonCue = 'open' | 'close' | 'edit' | 'toggle';
+
+type OrdinaryMotif = {
+  waveform: OscillatorType;
+  from: number;
+  to: number;
+  turn?: number;
+  duration: number;
+  volume: number;
+};
+
+// Fourfold amplitude lift (+12.04 dB); the loudest envelope peaks at .336.
+const SUBMIT_MOTIF: OrdinaryMotif = { waveform: 'triangle', from: 440, to: 330, duration: .065, volume: .8 };
+const BUTTON_MOTIFS: Record<ButtonCue, OrdinaryMotif> = {
+  open: { waveform: 'triangle', from: 300, to: 600, duration: .075, volume: .448 },
+  close: { waveform: 'triangle', from: 600, to: 300, duration: .06, volume: .448 },
+  edit: { waveform: 'triangle', from: 720, to: 680, duration: .035, volume: .384 },
+  toggle: { waveform: 'sine', from: 500, turn: 750, to: 500, duration: .08, volume: .448 },
+};
+
+/** One gesture-unlocked device, one replaceable ordinary cue, award priority. */
 export class AchievementAudio {
   private context: AudioContext | null = null;
   private cue: Cue | null = null;
-  private submitCue: Cue | null = null;
+  private ordinaryCue: Cue | null = null;
 
   // Called synchronously by the host's trusted pointer/key handler, never by
   // bootstrap, a catalog refresh or an effect that attempts to defeat autoplay.
@@ -28,9 +48,12 @@ export class AchievementAudio {
     this.stop();
     const start = context.currentTime + .012;
     const output = context.createGain();
-    output.gain.value = .075;
+    // The same fourfold lift preserves the square-led award's priority. At most
+    // two .48 envelopes overlap, bounded by .864; ordinary cues cannot overlap
+    // each other or an award, so output retains at least 1.27 dB of headroom.
+    output.gain.value = .9;
     output.connect(context.destination);
-    const cue: Cue = { output, voices: new Set(), cleanup: 0 };
+    const cue: Cue = { output, voices: new Map(), cleanup: 0 };
     this.cue = cue;
     const steps = [
       { offset: 0, semitone: 0, length: .13 },
@@ -51,7 +74,7 @@ export class AchievementAudio {
       envelope.gain.linearRampToValueAtTime(0, at + step.length);
       voice.connect(envelope);
       envelope.connect(output);
-      cue.voices.add(voice);
+      cue.voices.set(voice, envelope);
       voice.onended = () => {
         cue.voices.delete(voice);
         voice.disconnect();
@@ -66,47 +89,59 @@ export class AchievementAudio {
   }
 
   playSubmit() {
+    this.playOrdinary(SUBMIT_MOTIF);
+  }
+
+  playButton(cue: ButtonCue): void {
+    this.playOrdinary(BUTTON_MOTIFS[cue]);
+  }
+
+  private playOrdinary(motif: OrdinaryMotif) {
     const context = this.context;
     if (!context || context.state !== 'running' || document.hidden || this.cue) return;
-    this.stopCue(this.submitCue);
+    this.stopCue(this.ordinaryCue);
+    this.ordinaryCue = null;
     const start = context.currentTime + .003;
     const output = context.createGain();
-    output.gain.value = .025;
+    output.gain.value = motif.volume;
     output.connect(context.destination);
     const voice = context.createOscillator();
     const envelope = context.createGain();
-    voice.type = 'triangle';
-    voice.frequency.setValueAtTime(440, start);
-    voice.frequency.exponentialRampToValueAtTime(330, start + .065);
+    voice.type = motif.waveform;
+    voice.frequency.setValueAtTime(motif.from, start);
+    if (motif.turn !== undefined) {
+      voice.frequency.exponentialRampToValueAtTime(motif.turn, start + motif.duration / 2);
+    }
+    voice.frequency.exponentialRampToValueAtTime(motif.to, start + motif.duration);
     envelope.gain.setValueAtTime(0, start);
     envelope.gain.linearRampToValueAtTime(.42, start + .004);
-    envelope.gain.exponentialRampToValueAtTime(.001, start + .06);
-    envelope.gain.linearRampToValueAtTime(0, start + .065);
+    envelope.gain.exponentialRampToValueAtTime(.001, start + motif.duration - .005);
+    envelope.gain.linearRampToValueAtTime(0, start + motif.duration);
     voice.connect(envelope);
     envelope.connect(output);
-    const cue: Cue = { output, voices: new Set([voice]), cleanup: 0 };
-    this.submitCue = cue;
+    const cue: Cue = { output, voices: new Map([[voice, envelope]]), cleanup: 0 };
+    this.ordinaryCue = cue;
     voice.onended = () => {
       cue.voices.delete(voice);
       voice.disconnect();
       envelope.disconnect();
     };
     voice.start(start);
-    voice.stop(start + .065);
+    voice.stop(start + motif.duration);
     cue.cleanup = window.setTimeout(() => {
-      if (this.submitCue !== cue) return;
-      this.submitCue = null;
+      if (this.ordinaryCue !== cue) return;
+      this.ordinaryCue = null;
       this.stopCue(cue);
-    }, 100);
+    }, Math.ceil(motif.duration * 1_000) + 35);
   }
 
   stop() {
     const award = this.cue;
-    const submission = this.submitCue;
+    const ordinary = this.ordinaryCue;
     this.cue = null;
-    this.submitCue = null;
+    this.ordinaryCue = null;
     this.stopCue(award);
-    this.stopCue(submission);
+    this.stopCue(ordinary);
   }
 
   private stopCue(cue: Cue | null) {
@@ -115,7 +150,13 @@ export class AchievementAudio {
     cue.output.gain.cancelScheduledValues(0);
     cue.output.gain.value = 0;
     cue.output.disconnect();
-    for (const voice of cue.voices) voice.stop();
+    for (const [voice, envelope] of cue.voices) {
+      voice.onended = null;
+      voice.stop();
+      voice.disconnect();
+      envelope.disconnect();
+    }
+    cue.voices.clear();
   }
 
   dispose() {

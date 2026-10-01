@@ -25,23 +25,23 @@ export function ResultView({ result, expression, capabilities, messages, copySta
       key={result.kind === 'record' ? result.record.id : result.kind}>
       <h2 id="result-heading" className="visually-hidden">{outcome?.kind === 'error' || result.kind === 'failed' ? messages.outcomeLabel.error : messages.outcomeLabel.success}</h2>
       {result.kind === 'loading' && (
-        <p className="result-source result-pending">
+        <p className="result-source result-pending" data-speech-protected>
           {messages.loadingSource} <code>{result.request.expression}</code>
         </p>
       )}
       {result.kind === 'failed' && (
-        <div>
+        <div data-speech-protected>
           <p className="result-source">
             <code>{result.request.expression}</code>
           </p>
           <p className="result-error">{result.message}</p>
           {result.retryable && (
-            <button className="secondary-button" type="button" onClick={() => onRetry(result.request)}>{messages.retry}</button>
+            <button className="secondary-button" type="button" data-button-cue="none" onClick={() => onRetry(result.request)}>{messages.retry}</button>
           )}
         </div>
       )}
       {result.kind === 'record' && (
-        <div>
+        <div data-speech-protected>
           <p className="result-source">
             <code>{source}</code>
           </p>

@@ -92,12 +92,12 @@ export function PreferencesPanel({ preferences, onChange, achievementsAvailable,
             <label className="preferences-choice">
               <input type="checkbox" checked={preferences.humor}
                 onChange={(event) => onChange({ humor: event.currentTarget.checked })} />
-              <span className="preferences-label">Шутки<small>Комментарии к открытиям</small></span>
+              <span className="preferences-label">Шутки<small>Реплики и характер калькулятора</small></span>
             </label>
             <label className="preferences-choice">
               <input type="checkbox" checked={preferences.largeEffects}
                 onChange={(event) => onChange({ largeEffects: event.currentTarget.checked })} />
-              <span className="preferences-label">«Спецэффекты»<small>Праздник достижений и шуточные сцены. Звук управляется отдельно.</small></span>
+              <span className="preferences-label">«Спецэффекты»<small>Живые анимации, праздник достижений и шуточные сцены.</small></span>
             </label>
           </div>
         </fieldset>

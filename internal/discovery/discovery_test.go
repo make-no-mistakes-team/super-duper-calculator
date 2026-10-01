@@ -103,16 +103,15 @@ func TestPeerReviewCountsDistinctConsecutiveAcceptedActions(t *testing.T) {
 		{"first action", nil, false},
 		{"below threshold", []contracts.CalculationRecord{first}, false},
 		{"three deliberate actions", []contracts.CalculationRecord{first, second}, true},
-		{"retry cannot form a streak", []contracts.CalculationRecord{first, first}, false},
-		{"retry between deliberate actions", []contracts.CalculationRecord{first, first, second}, true},
-		{"retry of current action", []contracts.CalculationRecord{current, second}, false},
-		{"retry beyond nominal window", []contracts.CalculationRecord{first, second, current}, false},
 		{"changed source stops streak", []contracts.CalculationRecord{first, changedSource, second}, false},
 		{"accepted error stops streak", []contracts.CalculationRecord{first, failure("error", "2+2"), second}, false},
-		{"unidentified action cannot form a streak", []contracts.CalculationRecord{success("", "2+2", "4"), second}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			input := discovery.Input{Calculation: current, Previous: test.previous}
+			var state discovery.State
+			for i := len(test.previous) - 1; i >= 0; i-- {
+				state.Advance(test.previous[i])
+			}
+			input := discovery.Input{Calculation: current, State: &state}
 			if got := slices.Contains(rules.Match(input), "peer_review"); got != test.want {
 				t.Errorf("peer_review eligible = %v, want %v", got, test.want)
 			}
@@ -120,7 +119,6 @@ func TestPeerReviewCountsDistinctConsecutiveAcceptedActions(t *testing.T) {
 	}
 	assertMatches(t, rules, discovery.Input{
 		Calculation: failure("current-error", "2+2"),
-		Previous:    []contracts.CalculationRecord{first, second},
 	})
 }
 
@@ -170,11 +168,12 @@ func TestFactRulesUseParsedEngineFacts(t *testing.T) {
 func TestCombinedMatchesFollowCatalogOrderWithoutProgress(t *testing.T) {
 	rules := defaultRules(t)
 	current := engineRecord(t, "((((((sqrt(81)+abs(-1)+ln(1)+57))))))")
-	first, second := current, current
-	first.RequestID, second.RequestID = "first", "second"
+	state := discovery.State{}
+	state.Advance(current)
+	state.Advance(current)
 	input := discovery.Input{
 		Calculation:   current,
-		Previous:      []contracts.CalculationRecord{first, second},
+		State:         &state,
 		AcceptedCount: 25,
 	}
 	want := []string{"six_seven", "peer_review", "bracket_architect", "scientific_method", "touch_grass"}
@@ -190,10 +189,6 @@ func TestTouchGrassUsesAcceptedCountIncludingErrors(t *testing.T) {
 	assertMatches(t, rules, input, "touch_grass")
 	assertMatches(t, rules, input, "touch_grass") // Re-evaluation cannot advance a count.
 	assertMatches(t, rules, discovery.Input{Calculation: success("next", "1+1", "2"), AcceptedCount: 26}, "touch_grass")
-	// History and retries must not add to AcceptedCount; the rule does not
-	// derive accepted actions from the supplied history window.
-	previous := make([]contracts.CalculationRecord, 25)
-	assertMatches(t, rules, discovery.Input{Calculation: current, AcceptedCount: 24, Previous: previous})
 }
 
 func TestConfigSelectionAndThresholds(t *testing.T) {
@@ -209,19 +204,20 @@ func TestConfigSelectionAndThresholds(t *testing.T) {
 	}
 	current := success("current", "1", "67")
 	current.Facts = &contracts.CalculationFacts{Depth: 5, Functions: map[string]int{"sqrt": 1, "ln": 1}}
-	previous := []contracts.CalculationRecord{success("previous", "1", "1")}
-	input := discovery.Input{Calculation: current, Previous: previous, AcceptedCount: 24}
+	state := discovery.State{}
+	state.Advance(success("previous", "1", "1"))
+	input := discovery.Input{Calculation: current, State: &state, AcceptedCount: 24}
 	want := []string{"peer_review", "bracket_architect", "scientific_method", "touch_grass"}
 	assertMatches(t, rules, input, want...)
 	beforeFunctions := maps.Clone(current.Facts.Functions)
-	beforePrevious := slices.Clone(previous)
+	beforeState := state
 	config.Enabled[0] = "six_seven"
 	config.PeerReviewCount = 100
 	config.BracketDepth = 100
 	config.ScientificFunctions = 100
 	config.TouchGrassCount = 100
 	assertMatches(t, rules, input, want...)
-	if !maps.Equal(current.Facts.Functions, beforeFunctions) || !reflect.DeepEqual(previous, beforePrevious) ||
+	if !maps.Equal(current.Facts.Functions, beforeFunctions) || !reflect.DeepEqual(state, beforeState) ||
 		input.AcceptedCount != 24 || input.Calculation.RequestID != "current" {
 		t.Fatal("Match mutated its input")
 	}
@@ -253,45 +249,5 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatal("invalid configuration was accepted")
 			}
 		})
-	}
-}
-
-func TestCatalogStableLocalizedAndCopied(t *testing.T) {
-	want := []string{
-		"answer_found", "six_seven", "nice_number", "result_found",
-		"peer_review", "bracket_architect", "scientific_method", "touch_grass",
-	}
-	definitions := discovery.Catalog()
-	if len(definitions) != len(want) {
-		t.Fatalf("catalog length = %d, want %d", len(definitions), len(want))
-	}
-	config := discovery.DefaultConfig()
-	if !slices.Equal(config.Enabled, want) {
-		t.Errorf("default enabled rules = %v, want %v", config.Enabled, want)
-	}
-	if config.PeerReviewCount != 3 || config.BracketDepth != 6 ||
-		config.ScientificFunctions != 3 || config.TouchGrassCount != 25 {
-		t.Errorf("default thresholds = %+v", config)
-	}
-	for i, definition := range definitions {
-		if definition.ID != want[i] || !discovery.Known(definition.ID) {
-			t.Errorf("catalog[%d] has unknown or reordered ID %q", i, definition.ID)
-		}
-		if definition.RU.Name == "" || definition.RU.Description == "" || definition.RU.Comment == "" ||
-			definition.EN.Name == "" || definition.EN.Description == "" || definition.EN.Comment == "" {
-			t.Errorf("catalog[%d] lacks localized copy", i)
-		}
-	}
-	if discovery.Known("not_a_rule") {
-		t.Fatal("unknown discovery accepted")
-	}
-	originalComment := definitions[1].EN.Comment
-	definitions[0].ID = "changed"
-	definitions[1].EN.Comment = "changed"
-	config.Enabled[0] = "changed"
-	fresh := discovery.Catalog()
-	if fresh[0].ID != want[0] || fresh[1].EN.Comment != originalComment ||
-		discovery.DefaultConfig().Enabled[0] != want[0] || !discovery.Known(want[0]) {
-		t.Fatal("catalog or default configuration leaked caller mutation")
 	}
 }

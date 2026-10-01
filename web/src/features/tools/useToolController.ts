@@ -36,8 +36,13 @@ export function useToolController(
 
   function afterRender(focus: () => void) {
     cancelFocus();
+    const scheduledFrom = document.activeElement;
     pendingFocus.current = requestAnimationFrame(() => {
       pendingFocus.current = null;
+      // A deliberate focus move during the frame belongs to the user. Do not
+      // steal a close button's Space keyup or overwrite a newly chosen caret.
+      const active = document.activeElement;
+      if (active !== scheduledFrom && active !== document.body) return;
       focus();
     });
   }
